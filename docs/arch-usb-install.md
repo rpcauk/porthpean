@@ -29,7 +29,7 @@ It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, ac
 
 If whiptail is absent from the live USB, the script installs `libnewt` into that disposable live environment before showing the dialogs. No target disk is changed by that dependency installation.
 
-The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and root account password. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
+The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, an Arch-default rEFInd menu (Windows detected on other EFI partitions read-only), systemd-boot for recovery, and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and root account password. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 
 While commands run, whiptail shows stage/activity updates and elapsed time. Pacman downloads and installation show real percentages, with the current package and transaction position during installation. Raw command output is captured in a mode-600 log under the private `/run/porthpean-install.*` directory; an error opens its whiptail viewer. The successful base install saves a copy at `/root/porthpean-install.log` on the target. No input is logged, including password pipes.
 
@@ -296,7 +296,7 @@ ls -lh /efi/EFI/Linux/
 Require both nonempty UKIs and no build errors. Do not reboot on failure. Keep `/boot` inside encrypted root; the ESP is `/efi`.
 
 ```sh
-bootctl --esp-path=/efi install
+bootctl --esp-path=/efi --no-variables install
 mkdir -p /efi/loader/entries
 cat > /efi/loader/loader.conf <<'CONF'
 default lts.conf
@@ -314,7 +314,7 @@ CONF
 bootctl --esp-path=/efi list
 ```
 
-Automatic UKI discovery may show additional equivalent entries. `lts.conf` is the explicit default. This step writes firmware boot entries as well as the **Linux ESP only**; Other disks are not used. If `bootctl` fails to write NVRAM, stop and inspect its error; do not delete other boot entries.
+Automatic UKI discovery may show additional equivalent entries. `lts.conf` is the explicit default. These commands install the recovery loader only; they do not register a firmware entry. The automated installer additionally installs rEFInd, discovers Windows on other EFI partitions using read-only mounts, and registers the menu from outside the chroot. It checks that an active entry points to the current Linux ESP and is first in BootOrder before offering reboot. For a manual install, complete the same firmware registration and menu configuration before reboot; do not rely on bootctl inside a chroot to register it.
 
 Final base checks:
 

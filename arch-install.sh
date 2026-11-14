@@ -386,6 +386,64 @@ if __name__ == '__main__':
 PORTHPEAN_PROGRESS_PY
 }
 
+# Run outside arch-chroot: firmware variables must be written from the live host.
+configure_boot_menu() {
+  local disk=$1 esp=$2 root=$3 guid candidate type probe windows_guid='' records number
+  guid=$(blkid -s PARTUUID -o value "$esp")
+  [[ $guid =~ ^[0-9a-fA-F-]{36}$ ]] || fail 'Missing EFI partition GUID.'
+  mkdir -p "$root/efi/EFI/refind"
+  cp "$root/usr/share/refind/refind_x64.efi" "$root/efi/EFI/refind/refind_x64.efi"
+  # Only inspect other EFI partitions, read-only; never copy or modify Windows files.
+  probe=$(mktemp -d /run/porthpean-esp.XXXXXXXX)
+  while read -r candidate type; do
+    [[ $(printf '%s' "$type" | tr '[:upper:]' '[:lower:]') == c12a7328-f81f-11d2-ba4b-00a0c93ec93b && $candidate != "$esp" ]] || continue
+    if mount -o ro,nosuid,nodev,noexec "$candidate" "$probe"; then
+      if [[ -f $probe/EFI/Microsoft/Boot/bootmgfw.efi ]]; then
+        [[ -z $windows_guid ]] || { umount "$probe"; fail 'Multiple Windows EFI partitions found; inspect before reboot.'; }
+        windows_guid=$(blkid -s PARTUUID -o value "$candidate")
+        [[ $windows_guid =~ ^[0-9a-fA-F-]{36}$ ]] || { umount "$probe"; fail 'Invalid Windows EFI partition GUID.'; }
+      fi
+      umount "$probe"
+    else
+      fail "Cannot inspect EFI partition $candidate; boot menu is incomplete."
+    fi
+  done < <(lsblk -rpn -o PATH,PARTTYPE)
+  rmdir "$probe"
+  cat > "$root/efi/EFI/refind/refind.conf" <<CONF
+timeout 5
+default_selection "Arch Linux LTS"
+scanfor manual
+textonly
+menuentry "Arch Linux LTS" {
+    volume $guid
+    loader /EFI/Linux/arch-lts.efi
+}
+menuentry "Arch Linux" {
+    volume $guid
+    loader /EFI/Linux/arch-linux.efi
+}
+CONF
+  if [[ -n $windows_guid ]]; then
+    cat >> "$root/efi/EFI/refind/refind.conf" <<CONF
+menuentry "Windows" {
+    volume $windows_guid
+    loader /EFI/Microsoft/Boot/bootmgfw.efi
+}
+CONF
+  fi
+  # Keep systemd-boot as a recovery loader; fallback boot uses the same main menu.
+  cp "$root/efi/EFI/refind/refind_x64.efi" "$root/efi/EFI/BOOT/BOOTX64.EFI"
+  cp "$root/efi/EFI/refind/refind.conf" "$root/efi/EFI/BOOT/refind.conf"
+  efibootmgr --create --disk "$disk" --part 1 --label 'Arch Linux' \
+    --loader '\EFI\refind\refind_x64.efi'
+  records=$(efibootmgr -v)
+  number=$(printf '%s\n' "$records" | awk -v guid="$guid" '
+    tolower($0) ~ tolower(guid) && /\\EFI\\refind\\refind_x64.efi/ && /^Boot[0-9A-Fa-f]{4}\*/ {print substr($1,5,4); exit}')
+  [[ -n $number ]] || fail 'No active firmware entry matches the new EFI partition and rEFInd loader.'
+  [[ $(printf '%s\n' "$records" | sed -n 's/^BootOrder: //p' | cut -d, -f1) == "$number" ]] || fail 'Arch firmware entry is not first in BootOrder.'
+  printf '%s\n' "$records"
+}
+
 main() {
 trap 'status=$?; unset drive_pass; if [[ $status != 0 && -n ${install_log:-} ]] && command -v whiptail >/dev/null; then whiptail --title "Installation stopped - log" --scrolltext --textbox "$install_log" 22 78 >/dev/tty 2>&1 || true; fi' EXIT
 trap 'printf "Stopped at line %s; target filesystems left in place.\n" "$LINENO" >>"${install_log:-/dev/stderr}"' ERR
@@ -395,7 +453,7 @@ trap 'printf "Stopped at line %s; target filesystems left in place.\n" "$LINENO"
 [[ -t 0 && -t 1 ]] || fail 'Download, inspect and run interactively; do not pipe into bash.'
 [[ $(uname -m) == x86_64 && -f /etc/arch-release && -d /run/archiso ]] || fail 'Requires the Arch x86_64 live USB, not an installed OS or chroot.'
 [[ -d /sys/firmware/efi/efivars ]] || fail 'Boot the USB in UEFI mode.'
-for tool in lsblk findmnt cryptsetup sfdisk udevadm mount umount blkid btrfs mkfs.fat mkfs.btrfs pacstrap genfstab arch-chroot curl flock python3; do
+for tool in lsblk findmnt cryptsetup sfdisk udevadm mount umount blkid btrfs mkfs.fat mkfs.btrfs pacstrap genfstab arch-chroot curl flock python3 efibootmgr; do
   command -v "$tool" >/dev/null || fail "Missing live-media tool: $tool"
 done
 exec 9>/run/porthpean-arch-install.lock
@@ -487,7 +545,7 @@ while IFS= read -r target; do
 done <<< "$targets"
 run_progress "Installing the Arch base" pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager git curl \
-  neovim less libnewt python man-db man-pages mkinitcpio efibootmgr systemd-ukify
+  neovim less libnewt python man-db man-pages mkinitcpio efibootmgr systemd-ukify refind
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
 genfstab -U /mnt > /mnt/etc/fstab
 chmod 0644 /mnt/etc/fstab
@@ -529,7 +587,7 @@ PRESET
 done
 mkinitcpio -P
 [[ -s /efi/EFI/Linux/arch-lts.efi && -s /efi/EFI/Linux/arch-linux.efi ]]
-bootctl --esp-path=/efi install
+bootctl --esp-path=/efi --no-variables install
 mkdir -p /efi/loader/entries
 printf 'default lts.conf\ntimeout 5\neditor no\n' > /efi/loader/loader.conf
 printf 'title Arch Linux LTS\nefi /EFI/Linux/arch-lts.efi\n' > /efi/loader/entries/lts.conf
@@ -538,6 +596,8 @@ bootctl --esp-path=/efi list
 pacman -Q linux-lts linux intel-ucode
 systemctl is-enabled NetworkManager
 CHROOT
+export -f configure_boot_menu fail
+run_progress "Installing and verifying the boot menu" bash -euo pipefail -c 'configure_boot_menu "$@"' boot-menu "$disk" "$esp" /mnt
 if ! set_target_password root; then cancel; fi
 printf 'Completed %s\n' "$(date -Iseconds)" > /mnt/root/porthpean-base-complete
 cp "$install_log" /mnt/root/porthpean-install.log
