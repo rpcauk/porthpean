@@ -9,11 +9,14 @@ confirm() {
   read -r -p "Type '$expected' to continue: " answer
   [[ $answer == "$expected" ]] || fail 'Confirmation did not match. Nothing further will run.'
 }
+is_block_device() { [[ -b $1 ]]; }
+
 whole_disk() {
   local given=$1 resolved
-  [[ $given == /dev/disk/by-id/* && $given != *-part[0-9]* ]] || fail 'Use a whole-disk /dev/disk/by-id/ identity, not a partition.'
+  [[ $given == /dev/* ]] || fail 'Enter a whole-disk path such as /dev/sda or /dev/nvme0n1.'
   resolved=$(readlink -f -- "$given")
-  [[ -b $resolved && $(lsblk -dnro TYPE "$resolved") == disk ]] || fail 'Not a whole block disk.'
+  is_block_device "$resolved" || fail 'Not a block device.'
+  [[ $(lsblk -dnro TYPE "$resolved") == disk ]] || fail 'Select the whole disk, not a partition (for example /dev/sda, not /dev/sda1).'
   printf '%s\n' "$resolved"
 }
 unused_disk() {
@@ -130,15 +133,8 @@ fi
 lsblk -e7 -o NAME,PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS
 
 
-read -r -p 'Protected Windows whole-disk by-id path, or DISCONNECTED if physically removed: ' protected
-if [[ $protected != DISCONNECTED ]]; then
-  protected=$(whole_disk "$protected")
-  echo 'Protected Windows disk:'
-  lsblk -dn -o PATH,SIZE,MODEL,SERIAL "$protected"
-fi
-read -r -p 'Linux whole-disk /dev/disk/by-id/... to ERASE: ' disk_id
+read -r -p 'Linux disk to ERASE (for example /dev/sda or /dev/nvme0n1): ' disk_id
 disk=$(whole_disk "$disk_id")
-[[ $disk != "$protected" ]] || fail 'Linux target is the protected Windows disk.'
 plan_partial_cleanup "$disk"
 serial=$(lsblk -dnro SERIAL "$disk")
 serial=${serial## }; serial=${serial%% }
@@ -147,7 +143,7 @@ serial=${serial## }; serial=${serial%% }
 echo 'EXACT ERASE TARGET:'
 lsblk -o PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS "$disk"
 echo 'Plan: erase this disk; GPT; 2 GiB EFI partition; remaining LUKS2 + Btrfs.'
-echo 'All existing data on this target is lost. The protected Windows disk is not used.'
+echo 'All partitions and data on this disk will be removed. Select the Linux disk, not the Windows SSD.'
 echo 'Confirm that backups/Windows recovery keys exist and disk model/serial are correct.'
 confirm "ERASE $serial"
 # Recheck immediately before the first destructive operation.

@@ -17,10 +17,30 @@ class DiskGuards(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'definitions-only')
 
-    def test_requires_stable_whole_disk_identifier(self):
-        for value in ['/dev/nvme0n1', '/dev/sda', '/dev/disk/by-id/nvme-example-part1', '']:
-            result = shell(f'whole_disk {value!r}')
-            self.assertNotEqual(result.returncode, 0, value)
+    def test_accepts_whole_disk_paths_with_fake_probes_only(self):
+        for value in ['/dev/sda', '/dev/nvme0n1', '/dev/disk/by-id/example']:
+            fixture = '''is_block_device() { return 0; }
+            readlink() { printf '%s\\n' "${@: -1}"; }
+            lsblk() { echo disk; }
+            '''
+            result = shell(fixture + 'whole_disk ' + shlex.quote(value))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), value)
+
+    def test_rejects_partitions_even_when_they_are_block_devices(self):
+        for value in ['/dev/sda1', '/dev/nvme0n1p2', '/dev/disk/by-id/example-part1']:
+            fixture = '''is_block_device() { return 0; }
+            readlink() { printf '%s\\n' "${@: -1}"; }
+            lsblk() { echo part; }
+            '''
+            result = shell(fixture + 'whole_disk ' + shlex.quote(value))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('whole disk, not a partition', result.stderr)
+
+    def test_rejects_non_device_paths(self):
+        for value in ['', '/etc/passwd', 'sda']:
+            result = shell('whole_disk ' + shlex.quote(value))
+            self.assertNotEqual(result.returncode, 0)
 
     def test_rejects_nonexistent_disk(self):
         result = shell('whole_disk /dev/disk/by-id/porthpean-does-not-exist')
