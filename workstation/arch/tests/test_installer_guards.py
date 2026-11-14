@@ -1,6 +1,7 @@
 """Read-only/fake-command tests: never call actual partition or filesystem tools."""
 import pathlib
 import subprocess
+import shlex
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[3] / 'arch-install.sh'
@@ -74,12 +75,73 @@ class DiskGuards(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'nvme0n1')
 
-    def test_continue_validation_section_has_no_formatting_calls(self):
-        # Guard structural separation in addition to runtime disk rejection tests.
-        text = SCRIPT.read_text()
-        section = text.split('# Shared strict validation.', 1)[1]
-        for command in ['sfdisk ', 'mkfs.', 'luksFormat', 'cryptsetup open']:
-            self.assertNotIn(command, section)
+    def cleanup_fixture(self, mounts, extra=''):
+        # Canonical fake devices; every real host probe/mutation is overridden.
+        return '''readlink() { printf '%s\\n' "${@: -1}"; }
+        lsblk() {
+          case "$*" in
+            *MOUNTPOINTS*) echo '' ;;
+            *PATH,TYPE*) printf '/dev/linux disk\\n/dev/linux1 part\\n/dev/linux2 part\\n' ;;
+            *PATH*) printf '/dev/linux\\n/dev/linux1\\n/dev/linux2\\n' ;;
+            *RO*|*RM*) echo 0 ;;
+          esac
+        }
+        cryptroot_open() { return 1; }
+        mountpoint() { return 0; }
+        findmnt() {
+          if [[ $* == '-rn -o SOURCE,TARGET' ]]; then printf '%s\\n' MOUNT_RECORDS; else echo mount-plan; fi
+        }
+        '''.replace('MOUNT_RECORDS', shlex.quote(mounts)) + extra
+
+    def test_accepts_selected_partial_mounts(self):
+        result = shell(self.cleanup_fixture('/dev/linux2[/@] /mnt\n/dev/linux1 /mnt/efi') + '\nplan_partial_cleanup /dev/linux')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Partial installation mounts', result.stdout)
+
+    def test_refuses_other_disk_mounted_under_mnt(self):
+        result = shell(self.cleanup_fixture('/dev/linux2[/@] /mnt\n/dev/windows1 /mnt/efi') + '\nplan_partial_cleanup /dev/linux')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('not on the selected Linux disk', result.stderr)
+
+    def test_refuses_selected_disk_used_outside_install_tree(self):
+        result = shell(self.cleanup_fixture('/dev/linux2 /run/archiso/bootmnt') + '\nplan_partial_cleanup /dev/linux')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Target is in use', result.stderr)
+
+    def test_refuses_active_chroot_mount(self):
+        result = shell(self.cleanup_fixture('/dev/linux2 /mnt\ndev /mnt/dev') + '\nplan_partial_cleanup /dev/linux')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Target is in use', result.stderr)
+
+    def test_refuses_cryptroot_on_another_disk(self):
+        extra = '''cryptroot_open() { return 0; }
+        cryptsetup() { printf 'device: /dev/windows2\\n'; }
+        '''
+        result = shell(self.cleanup_fixture('/dev/linux2 /mnt', extra) + '\nplan_partial_cleanup /dev/linux')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('belongs to another disk', result.stderr)
+
+    def test_busy_unmount_stops_before_closing_mapping(self):
+        extra = '''umount() { echo BUSY >&2; return 1; }
+        cryptroot_open() { return 0; }
+        cryptsetup() { if [[ $1 == status ]]; then echo 'device: /dev/linux2'; else echo SHOULD-NOT-CLOSE; fi; }
+        '''
+        result = shell(self.cleanup_fixture('/dev/linux2 /mnt', extra) + '\nclear_partial_install /dev/linux')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Target is busy', result.stderr)
+        self.assertNotIn('SHOULD-NOT-CLOSE', result.stdout)
+
+    def test_successful_cleanup_runs_unmount_then_unused_check(self):
+        extra = '''umount() { echo "UNMOUNT $*"; }
+        cryptroot_open() { return 0; }
+        cryptsetup() { if [[ $1 == status ]]; then echo 'device: /dev/linux2'; else echo "CLOSE $*"; fi; }
+        unused_disk() { echo "CHECK-UNUSED $*"; }
+        '''
+        result = shell(self.cleanup_fixture('/dev/linux2 /mnt', extra) + '\nclear_partial_install /dev/linux')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('UNMOUNT -R /mnt', result.stdout)
+        self.assertGreater(result.stdout.index('CLOSE close cryptroot'), result.stdout.index('UNMOUNT'))
+        self.assertGreater(result.stdout.index('CHECK-UNUSED'), result.stdout.index('CLOSE close cryptroot'))
 
 
 if __name__ == '__main__':

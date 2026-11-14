@@ -15,15 +15,17 @@ curl --fail --show-error --location --proto '=https' --tlsv1.2 \
 less /root/arch-install.sh
 ```
 
-**If you have already reached stage 6 with the stage-5 filesystems mounted**, use:
+Run the single fresh-install flow:
 
 ```sh
-bash /root/arch-install.sh --continue
+bash /root/arch-install.sh
 ```
 
-Run this at the live USB prompt, outside `arch-chroot`, after any current pacstrap has finished. Continue mode validates the existing layout and contains no partitioning/formatting path. If a mount/layout differs, it stops for inspection rather than repairing it by formatting. It can rerun pacstrap after an incomplete base install and backs up replaced base configuration, but is not a general repair tool for an existing workstation. A completion marker prevents accidentally redoing a completed base setup.
+Run this at the live USB prompt, outside `arch-chroot`, after any current pacstrap has finished. It **always starts from scratch and erases the selected Linux disk**, including any partial installation. There are no resume/continue modes.
 
-**For a future install from scratch**, run `bash /root/arch-install.sh` and explicitly choose fresh installation. It asks for the protected Windows disk (or physical disconnection), target Linux disk by stable identity, hostname, and an exact `ERASE <serial>` confirmation. It refuses mounted/active mapped, removable and read-only targets. Windows is protected by your correct identity selection, not by a guessed device number or capacity.
+It asks for the protected Windows disk (or physical disconnection), target Linux disk by stable identity, hostname, and an exact `ERASE <serial>` confirmation. Before confirmation it shows any partial-install mounts/mapping that must be closed. After confirmation it unmounts only the selected disk's known `/mnt` installation tree, closes `cryptroot` only if its backing partition is on that disk, checks the disk is unused, and then repartitions/formats it.
+
+It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, active swap, removable/read-only targets or a target used outside the installation tree. If a process keeps the mount busy, it stops without forced/lazy unmounting or killing processes. Exit chroots and finish/stop the current installer yourself, or reboot back into the USB and reconnect, then rerun. Windows is protected by your correct identity selection, not by a guessed device number or capacity.
 
 The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. It delegates hidden encryption/account prompts to cryptsetup/passwd, creates only admin and emergency root credentials, and leaves reboot/unmount to you. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 

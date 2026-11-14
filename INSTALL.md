@@ -2,7 +2,7 @@
 
 Opinionated Arch Linux workstation configuration for a ThinkPad T480s, with a small reusable core. This public repository distributes the installer until a dedicated website exists. The Porthpean application and workstation infrastructure remain separate.
 
-Start with [USB preparation and encrypted base installation](docs/arch-usb-install.md). That base stage creates only a password-protected `admin` account. [`arch-install.sh`](arch-install.sh) can guide the live-USB installation; use its `--continue` mode if the stage-5 filesystems are already mounted. Fresh mode erases the explicitly confirmed Linux disk. Run `arch-install.sh` only from the Arch live USB. Run the desktop bootstrap below only from the installed base. Neither is intended for an existing server.
+Start with [USB preparation and encrypted base installation](docs/arch-usb-install.md). That base stage creates only a password-protected `admin` account. [`arch-install.sh`](arch-install.sh) guides a fresh live-USB installation. It always erases the explicitly confirmed Linux disk, including a partial installation; no resume modes. It can safely unmount its known partial-install tree and close its target encryption mapping before formatting, and stops if they are busy or unrelated. Run `arch-install.sh` only from the Arch live USB. Run the desktop bootstrap below only from the installed base. Neither is intended for an existing server.
 
 From the public `main` branch, from the installed base as `admin`:
 
@@ -26,7 +26,7 @@ The bootstrap prompts for a daily username (default `ryan`), a hidden daily-acco
 - Personal profile: GB keyboard defaults for `t480s`; chosen hostname and disk design in the manual guide.
 - Local only: disk identity, passwords, provider credentials, backup destination/keys and signing keys. Never commit these.
 
-Do not build a distro-independent installer or plugin system before there is another actual machine/use case. Profiles hold defaults; they are not secrets or permission grants. The post-boot desktop bootstrap never chooses or formats a disk. The separate live-USB installer formats only in explicitly selected fresh mode after disk/serial confirmation.
+Do not build a distro-independent installer or plugin system before there is another actual machine/use case. Profiles hold defaults; they are not secrets or permission grants. The post-boot desktop bootstrap never chooses or formats a disk. The separate live-USB installer always performs a fresh installation after disk/serial confirmation.
 
 [Bootstrap details and remaining setup](workstation/arch/README.md).
 

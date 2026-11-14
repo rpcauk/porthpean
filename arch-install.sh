@@ -33,8 +33,76 @@ same_install_disk() {
   printf '%s\n' "$parent"
 }
 
+cryptroot_open() { [[ -e /dev/mapper/cryptroot ]]; }
+
+source_on_disk() {
+  local source=${1%%\[*} disk=$2 path paths canonical candidate
+  [[ $source == /dev/* ]] || return 1
+  canonical=$(readlink -f -- "$source") || return 1
+  [[ -n $canonical ]] || return 1
+  paths=$(lsblk -nrpo PATH "$disk") || return 1
+  while IFS= read -r path; do
+    candidate=$(readlink -f -- "$path") || return 1
+    [[ -n $candidate && $canonical == "$candidate" ]] && return 0
+  done <<< "$paths"
+  return 1
+}
+
+plan_partial_cleanup() {
+  local disk=$1 source target records paths path type backing mounts
+  cleanup_mounted=false
+  cleanup_mapping=false
+  [[ $(lsblk -dnro RO "$disk") == 0 && $(lsblk -dnro RM "$disk") == 0 ]] || fail 'Refusing a read-only or removable target.'
+  mounts=$(lsblk -nrpo MOUNTPOINTS "$disk")
+  [[ $mounts != *'[SWAP]'* ]] || fail 'Target has active swap; disable it manually or reboot the USB first.'
+  paths=$(lsblk -nrpo PATH,TYPE "$disk")
+  while read -r path type; do
+    case "$type" in
+      disk|part) ;;
+      crypt) [[ $(readlink -f -- "$path") == "$(readlink -f /dev/mapper/cryptroot)" ]] || fail 'Unexpected encrypted mapping; reboot the USB or inspect manually.' ;;
+      *) fail "Unsupported active target device: $path ($type)" ;;
+    esac
+  done <<< "$paths"
+  if cryptroot_open; then
+    backing=$(cryptsetup status cryptroot | awk '$1 == "device:" {print $2}')
+    source_on_disk "$backing" "$disk" || fail 'cryptroot belongs to another disk; it will not be closed.'
+    cleanup_mapping=true
+  fi
+  records=$(findmnt -rn -o SOURCE,TARGET)
+  while read -r source target; do
+    if [[ $target == /mnt || $target == /mnt/* ]] || source_on_disk "$source" "$disk"; then
+      case "$target" in
+        /mnt|/mnt/home|/mnt/.snapshots|/mnt/var/log|/mnt/var/cache/pacman/pkg|/mnt/var/tmp|/mnt/srv/workstation-state|/mnt/efi) ;;
+        *) fail "Target is in use at $target. Exit chroots/stop installers or reboot the USB first." ;;
+      esac
+      source_on_disk "$source" "$disk" || fail "Mount $target is not on the selected Linux disk; refusing cleanup."
+      cleanup_mounted=true
+    fi
+  done <<< "$records"
+  if [[ $cleanup_mounted == true ]]; then
+    mountpoint -q /mnt || fail 'Orphaned child mounts below /mnt; inspect manually or reboot the USB.'
+    echo 'Partial installation mounts to unmount before erasure:'
+    findmnt -R /mnt
+  fi
+  [[ $cleanup_mapping == false ]] || echo 'Partial encryption mapping to close: cryptroot (on selected target only).'
+}
+
+clear_partial_install() {
+  local disk=$1
+  # Revalidate the entire cleanup plan immediately before touching mounts.
+  plan_partial_cleanup "$disk"
+  cd /
+  if [[ $cleanup_mounted == true ]]; then
+    umount -R /mnt || fail 'Target is busy. No forced/lazy unmount used. Exit other sessions/installers or reboot the USB.'
+  fi
+  if [[ $cleanup_mapping == true ]]; then
+    cryptsetup close cryptroot || fail 'cryptroot is busy; inspect it or reboot the USB before retrying.'
+  fi
+  unused_disk "$disk"
+}
+
 main() {
-trap 'printf "Stopped at line %s. Do not reboot blindly or restart in fresh-install mode. Inspect the error; mounted filesystems are left in place.\n" "$LINENO" >&2' ERR
+trap 'printf "Stopped at line %s. Inspect the error; mounted filesystems are left in place. Rerunning this installer starts over and ERASES the selected disk after confirmation.\n" "$LINENO" >&2' ERR
 
 # These checks run before any mutation, including prompts which could mislead on another OS.
 [[ $EUID == 0 ]] || fail 'Run as root from the Arch USB.'
@@ -46,15 +114,8 @@ for tool in lsblk findmnt cryptsetup sfdisk udevadm mount umount blkid btrfs mkf
 done
 exec 9>/run/porthpean-arch-install.lock
 flock -n 9 || fail 'Another instance is running.'
-[[ $# -le 1 ]] || fail 'Usage: bash arch-install.sh [--continue]'
-mode=${1:-}
-if [[ -z $mode ]]; then
-  echo '1: FRESH install — erase a selected disk, then install the base.'
-  echo '2: CONTINUE from stage 6 — validate /mnt and install/configure base; NO formatting.'
-  read -r -p 'Choose 1 or 2 (no default): ' choice
-  case "$choice" in 1) mode=--fresh ;; 2) mode=--continue ;; *) fail 'Choose 1 or 2.' ;; esac
-fi
-[[ $mode == --fresh || $mode == --continue ]] || fail 'Unknown mode.'
+[[ $# == 0 ]] || fail 'Usage: bash arch-install.sh (always a fresh install; no resume modes)'
+echo 'FRESH INSTALL: this always erases the selected Linux disk after serial-number confirmation.'
 read -r -p 'Hostname [t480s]: ' host
 host=${host:-t480s}
 [[ ${#host} -le 63 && $host =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || fail 'Use a hostname of 1–63 lowercase letters/digits/hyphens, without leading/trailing hyphen.'
@@ -69,63 +130,59 @@ fi
 lsblk -e7 -o NAME,PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS
 
 
-if [[ $mode == --fresh ]]; then
-  mountpoint -q /mnt && fail '/mnt is already mounted. Use --continue to preserve the stage-6 layout.'
-  [[ ! -e /dev/mapper/cryptroot ]] || fail 'cryptroot is already open. Inspect it; do not restart a fresh install.'
-  read -r -p 'Protected Windows whole-disk by-id path, or DISCONNECTED if physically removed: ' protected
-  if [[ $protected != DISCONNECTED ]]; then
-    protected=$(whole_disk "$protected")
-    echo 'Protected Windows disk:'
-    lsblk -dn -o PATH,SIZE,MODEL,SERIAL "$protected"
-  fi
-  read -r -p 'Linux whole-disk /dev/disk/by-id/... to ERASE: ' disk_id
-  disk=$(whole_disk "$disk_id")
-  [[ $disk != "$protected" ]] || fail 'Linux target is the protected Windows disk.'
-  unused_disk "$disk"
-  serial=$(lsblk -dnro SERIAL "$disk")
-  serial=${serial## }; serial=${serial%% }
-  [[ -n $serial ]] || fail 'No hardware serial reported. Resolve disk identity manually.'
-  [[ $(blockdev --getsize64 "$disk") -ge 34359738368 ]] || fail 'Target is smaller than 32 GiB.'
-  echo 'EXACT ERASE TARGET:'
-  lsblk -o PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS "$disk"
-  echo 'Plan: erase this disk; GPT; 2 GiB EFI partition; remaining LUKS2 + Btrfs.'
-  echo 'All existing data on this target is lost. The protected Windows disk is not used.'
-  echo 'Confirm that backups/Windows recovery keys exist and disk model/serial are correct.'
-  confirm "ERASE $serial"
-  # Recheck immediately before the first destructive operation.
-  [[ $(readlink -f -- "$disk_id") == "$disk" && $(lsblk -dnro SERIAL "$disk") == "$serial" ]] || fail 'Disk identity changed.'
-  unused_disk "$disk"
-  sfdisk --lock --wipe always --wipe-partitions always "$disk" <<'LAYOUT'
+read -r -p 'Protected Windows whole-disk by-id path, or DISCONNECTED if physically removed: ' protected
+if [[ $protected != DISCONNECTED ]]; then
+  protected=$(whole_disk "$protected")
+  echo 'Protected Windows disk:'
+  lsblk -dn -o PATH,SIZE,MODEL,SERIAL "$protected"
+fi
+read -r -p 'Linux whole-disk /dev/disk/by-id/... to ERASE: ' disk_id
+disk=$(whole_disk "$disk_id")
+[[ $disk != "$protected" ]] || fail 'Linux target is the protected Windows disk.'
+plan_partial_cleanup "$disk"
+serial=$(lsblk -dnro SERIAL "$disk")
+serial=${serial## }; serial=${serial%% }
+[[ -n $serial ]] || fail 'No hardware serial reported. Resolve disk identity manually.'
+[[ $(blockdev --getsize64 "$disk") -ge 34359738368 ]] || fail 'Target is smaller than 32 GiB.'
+echo 'EXACT ERASE TARGET:'
+lsblk -o PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS "$disk"
+echo 'Plan: erase this disk; GPT; 2 GiB EFI partition; remaining LUKS2 + Btrfs.'
+echo 'All existing data on this target is lost. The protected Windows disk is not used.'
+echo 'Confirm that backups/Windows recovery keys exist and disk model/serial are correct.'
+confirm "ERASE $serial"
+# Recheck immediately before the first destructive operation.
+[[ $(readlink -f -- "$disk_id") == "$disk" && $(lsblk -dnro SERIAL "$disk") == "$serial" ]] || fail 'Disk identity changed.'
+clear_partial_install "$disk"
+sfdisk --lock --wipe always --wipe-partitions always "$disk" <<'LAYOUT'
 label: gpt
 size=2GiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="ARCH_EFI"
 type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="ARCH_LUKS"
 LAYOUT
-  udevadm settle
-  esp=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 1 {print $1}')
-  crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
-  [[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
-  mkfs.fat -F 32 -n ARCH_EFI "$esp"
-  echo 'Set the DRIVE passphrase at cryptsetup prompts; then enter it again to unlock.'
-  cryptsetup luksFormat --type luks2 --verify-passphrase "$crypt"
-  cryptsetup open "$crypt" cryptroot
-  mkfs.btrfs -L archroot /dev/mapper/cryptroot
-  mount /dev/mapper/cryptroot /mnt
-  for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub"; done
-  umount /mnt
-  mount -o subvol=@,compress=zstd:3 /dev/mapper/cryptroot /mnt
-  for pair in '@home:home' '@snapshots:.snapshots' '@log:var/log' '@pkg:var/cache/pacman/pkg' '@tmp:var/tmp' '@state:srv/workstation-state'; do
-    sub=${pair%%:*}; path=${pair#*:}
-    mkdir -p "/mnt/$path"
-    mount -o "subvol=$sub,compress=zstd:3" /dev/mapper/cryptroot "/mnt/$path"
-  done
-  mkdir -p /mnt/efi
-  mount -o umask=0077 "$esp" /mnt/efi
-fi
+udevadm settle
+esp=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 1 {print $1}')
+crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
+[[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
+mkfs.fat -F 32 -n ARCH_EFI "$esp"
+echo 'Set the DRIVE passphrase at cryptsetup prompts; then enter it again to unlock.'
+cryptsetup luksFormat --type luks2 --verify-passphrase "$crypt"
+cryptsetup open "$crypt" cryptroot
+mkfs.btrfs -L archroot /dev/mapper/cryptroot
+mount /dev/mapper/cryptroot /mnt
+for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub"; done
+umount /mnt
+mount -o subvol=@,compress=zstd:3 /dev/mapper/cryptroot /mnt
+for pair in '@home:home' '@snapshots:.snapshots' '@log:var/log' '@pkg:var/cache/pacman/pkg' '@tmp:var/tmp' '@state:srv/workstation-state'; do
+  sub=${pair%%:*}; path=${pair#*:}
+  mkdir -p "/mnt/$path"
+  mount -o "subvol=$sub,compress=zstd:3" /dev/mapper/cryptroot "/mnt/$path"
+done
+mkdir -p /mnt/efi
+mount -o umask=0077 "$esp" /mnt/efi
 
-# Shared strict validation. Continue mode reaches here without calling partition/format/open commands.
-mountpoint -q /mnt || fail '/mnt is not mounted; follow stage 5 first.'
+# Verify the new layout before installing packages or boot files.
+mountpoint -q /mnt || fail '/mnt did not mount successfully.'
 [[ $(findmnt -nr -M /mnt -o FSTYPE) == btrfs && $(findmnt -nr -M /mnt -o FSROOT) == /@ ]] || fail 'Expected /mnt to be Btrfs subvolume @.'
-[[ -b /dev/mapper/cryptroot ]] || fail 'Expected the existing cryptroot mapping.'
+[[ -b /dev/mapper/cryptroot ]] || fail 'Expected the new cryptroot mapping.'
 rootdev=$(findmnt -nr -M /mnt -o SOURCE)
 rootdev=${rootdev%%\[*}
 [[ $(readlink -f "$rootdev") == "$(readlink -f /dev/mapper/cryptroot)" ]] || fail '/mnt is not on cryptroot.'
@@ -135,7 +192,7 @@ cryptsetup isLuks --type luks2 "$crypt" || fail 'Expected LUKS2.'
 [[ $(btrfs filesystem show /mnt | awk '/Total devices/ {print $3}') == 1 ]] || fail 'Only a single-device Btrfs layout is supported.'
 for pair in '@home:home' '@snapshots:.snapshots' '@log:var/log' '@pkg:var/cache/pacman/pkg' '@tmp:var/tmp' '@state:srv/workstation-state'; do
   sub=${pair%%:*}; path=${pair#*:}
-  mountpoint -q "/mnt/$path" || fail "Missing stage-5 mount: /mnt/$path"
+  mountpoint -q "/mnt/$path" || fail "Missing install mount: /mnt/$path"
   [[ $(findmnt -nr -M "/mnt/$path" -o FSROOT) == "/$sub" ]] || fail "Wrong subvolume at $path"
   source=$(findmnt -nr -M "/mnt/$path" -o SOURCE); source=${source%%\[*}
   [[ $(readlink -f "$source") == "$(readlink -f /dev/mapper/cryptroot)" ]] || fail "Wrong filesystem at $path"
@@ -152,13 +209,10 @@ while IFS= read -r target; do
   esac
   [[ ,$(findmnt -nr -M "$target" -o OPTIONS), == *,rw,* ]] || fail "Read-only target mount $target"
 done <<< "$targets"
-[[ ! -e /mnt/root/porthpean-base-complete ]] || fail 'Base installation already marked complete; use installed-system bootstrap after reboot.'
 findmnt -R /mnt
 lsblk -o PATH,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINTS "/dev/$parent"
 printf 'Install/configure base at /mnt; hostname %s; admin + emergency root passwords will be requested.\n' "$host"
-echo 'No formatting occurs after this point. Existing fstab/configuration may be replaced with backups.'
-echo 'Leave any current pacstrap/chroot before continuing. Keep AC power and internet connected.'
-confirm INSTALL-BASE
+echo 'Fresh layout created. Installing the base; keep AC power and internet connected.'
 pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager sudo git curl \
   neovim less man-db man-pages mkinitcpio efibootmgr systemd-ukify
