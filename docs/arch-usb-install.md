@@ -4,6 +4,33 @@ Chosen values: **daily user `ryan`, hostname `t480s`, admin user `admin`, agent 
 
 Read this on another device while installing. Execute one block at a time and stop on any unexpected output. Do not paste the entire document into a shell. The only values you must discover are USB identity, Linux SSD identity, Wi-Fi interface/SSID if needed, and private passwords. Disk IDs and passwords cannot safely be supplied in advance.
 
+## Guided installer alternative
+
+The public [`arch-install.sh`](https://github.com/rpcauk/porthpean/blob/main/arch-install.sh) automates the live-USB steps through the bootable console base. Boot/connect the Arch USB first, then download and inspect it:
+
+```sh
+curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/rpcauk/porthpean/main/arch-install.sh \
+  -o /root/arch-install.sh
+less /root/arch-install.sh
+```
+
+**If you have already reached stage 6 with the stage-5 filesystems mounted**, use:
+
+```sh
+bash /root/arch-install.sh --continue
+```
+
+Run this at the live USB prompt, outside `arch-chroot`, after any current pacstrap has finished. Continue mode validates the existing layout and contains no partitioning/formatting path. If a mount/layout differs, it stops for inspection rather than repairing it by formatting. It can rerun pacstrap after an incomplete base install and backs up replaced base configuration, but is not a general repair tool for an existing workstation. A completion marker prevents accidentally redoing a completed base setup.
+
+**For a future install from scratch**, run `bash /root/arch-install.sh` and explicitly choose fresh installation. It asks for the protected Windows disk (or physical disconnection), target Linux disk by stable identity, hostname, and an exact `ERASE <serial>` confirmation. It refuses mounted/active mapped, removable and read-only targets. Windows is protected by your correct identity selection, not by a guessed device number or capacity.
+
+The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. It delegates hidden encryption/account prompts to cryptsetup/passwd, creates only admin and emergency root credentials, and leaves reboot/unmount to you. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
+
+After the console base boots, use the separate `install.sh` entry point in section 8 for the daily user/password, desktop and optional AI accounts. No need to repeat the manual commands below when their guided equivalents completed successfully.
+
+Validation is limited to shell parsing and mocked safety-guard tests; no actual disk install has been executed here. The manual steps below remain the reference for inspecting or diagnosing the generated setup.
+
 ## 1. What you need
 
 - T480s on AC, backup computer, reliable internet (Ethernet preferred), USB stick of at least 4 GB which can be erased.
