@@ -44,7 +44,7 @@ class PasswordDialogs(unittest.TestCase):
             ui_password() { printf '%s' "$expected"; }
             arch-chroot() { [[ $(env) != *"$expected"* ]] || return 92; cat >/dev/null; }
             chpasswd() { [[ $(env) != *"$expected"* ]] || return 92; cat >/dev/null; }
-            ''' + ('set_target_password admin' if path == LIVE else 'ui_set_account_password admin'))
+            ''' + ('set_target_password root' if path == LIVE else 'ui_set_account_password root'))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn(SECRET, result.stdout + result.stderr)
 
@@ -68,6 +68,8 @@ class PasswordDialogs(unittest.TestCase):
                     n=$(cat "$counter"); n=$((n+1)); printf '%s' "$n" > "$counter"
                     case "$n" in 1) printf '' >&3 ;; 2) printf first >&3 ;;
                       3) printf mismatch >&3 ;; 4|5) printf accepted >&3 ;; *) return 99 ;; esac
+                  else
+                    return 1  # Dismissing a mismatch notice must still retry.
                   fi
                 }
                 actual=$(ui_password Test)
@@ -100,6 +102,48 @@ class PasswordDialogs(unittest.TestCase):
         ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_rejected_account_password_retries_even_when_notice_dismissed(self):
+        for path, command in ((LIVE, 'set_target_password'), (UI, 'ui_set_account_password')):
+            with tempfile.TemporaryDirectory() as directory:
+                counter = pathlib.Path(directory) / 'attempts'
+                counter.write_text('0')
+                result = shell(path, 'counter=' + shlex.quote(str(counter)) + '''
+                ui_password() { printf synthetic; }
+                whiptail() { return 1; }
+                accept_on_second_try() {
+                  cat >/dev/null
+                  n=$(cat "$counter"); n=$((n+1)); printf '%s' "$n" > "$counter"
+                  [[ $n == 2 ]]
+                }
+                arch-chroot() { accept_on_second_try; }
+                chpasswd() { accept_on_second_try; }
+                ''' + command + ' root\n[[ $(cat "$counter") == 2 ]]')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_rejected_drive_unlock_retries_without_reformatting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            attempts = pathlib.Path(directory) / 'attempts'
+            operations = pathlib.Path(directory) / 'operations'
+            attempts.write_text('0')
+            result = shell(LIVE, 'attempts=' + shlex.quote(str(attempts)) + '\noperations=' + shlex.quote(str(operations)) + '''
+            drive_pass=synthetic
+            ui_password() { printf synthetic-retry; }
+            whiptail() { return 1; }
+            cryptsetup() {
+              cat >/dev/null
+              printf '%s\\n' "$1" >> "$operations"
+              if [[ $1 == open ]]; then
+                n=$(cat "$attempts"); n=$((n+1)); printf '%s' "$n" > "$attempts"
+                [[ $n -gt 1 ]] || return 2
+              fi
+            }
+            format_and_unlock /dev/fake
+            [[ ! ${drive_pass+x} ]]
+            ''')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(operations.read_text().splitlines(), ['luksFormat', 'open', 'open'])
+
     def test_account_password_piped_to_target_without_secret_arguments(self):
         for path, command in ((LIVE, 'set_target_password'), (UI, 'ui_set_account_password')):
             result = shell(path, 'expected=' + shlex.quote(SECRET) + '''
@@ -107,12 +151,12 @@ class PasswordDialogs(unittest.TestCase):
             check_input() {
               [[ $* != *"$expected"* ]] || return 91
               IFS= read -r line
-              [[ $line == "admin:$expected" ]] || return 92
+              [[ $line == "root:$expected" ]] || return 92
               echo OK
             }
             arch-chroot() { [[ $* == '/mnt chpasswd' ]] || return 93; check_input "$@"; }
             chpasswd() { check_input "$@"; }
-            ''' + command + ' admin')
+            ''' + command + ' root')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), 'OK')
             self.assertNotIn(SECRET, result.stderr)

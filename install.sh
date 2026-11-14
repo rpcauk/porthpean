@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Download this file, read it, then run with sudo from the installed Arch base.
 set -euo pipefail
-[[ $EUID == 0 ]] || { echo 'Run with sudo after reviewing this file.' >&2; exit 1; }
+[[ $EUID == 0 ]] || { echo 'Run as root after reviewing this file.' >&2; exit 1; }
 [[ -t 0 && -t 1 ]] || { echo 'Download and run interactively; do not pipe curl into a shell.'; exit 1; }
 source /etc/os-release
 [[ $ID == arch && $(uname -m) == x86_64 ]] || { echo 'Requires installed Arch Linux x86_64.'; exit 1; }
-getent passwd admin >/dev/null || { echo 'Create admin first using the base install guide.'; exit 1; }
 command -v git >/dev/null || { echo 'Install git as part of the base install first.'; exit 1; }
 repo=https://github.com/rpcauk/porthpean.git
 checkout=$(mktemp -d /root/porthpean-install.XXXXXXXX)

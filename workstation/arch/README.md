@@ -1,6 +1,6 @@
 # Arch workstation bootstrap
 
-Read [the base installation guide](../../docs/arch-usb-install.md) first. The manual install creates `admin` only. The old Mac dotfiles bootstrap must not run on Arch.
+Read [the base installation guide](../../docs/arch-usb-install.md) first. The manual install sets the `root` password without creating a separate admin user. The old Mac dotfiles bootstrap must not run on Arch.
 
 Distribution: `https://github.com/rpcauk/porthpean`; maintainer Git remote: `git@github.com:rpcauk/porthpean.git`. [The public entry point](../../INSTALL.md) downloads a reviewable checkout rather than requiring a GitHub key.
 
@@ -10,7 +10,7 @@ From a reviewed root-owned checkout, as root:
 bash bootstrap
 ```
 
-Whiptail dialogs select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. Hidden whiptail password boxes collect and confirm the daily password, which goes to chpasswd through stdin; existing passwords are retained unless changed explicitly. Passwords stay briefly in non-exported shell memory and are unset after use. No password/hash enters Ansible variables, command arguments or saved configuration. Tracing is disabled; shell memory wiping cannot be guaranteed. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
+Whiptail dialogs select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. Hidden whiptail password boxes collect and confirm the daily password, which goes to chpasswd through stdin; existing passwords are retained unless changed explicitly. Mismatched or rejected passwords retry in place; Cancel exits. Passwords stay briefly in non-exported shell memory and are unset after use. No password/hash enters Ansible variables, command arguments or saved configuration. Tracing is disabled; shell memory wiping cannot be guaranteed. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
 
 The reusable core handles accounts and convergence. The current profile specifies GB keyboard defaults. Packages and desktop choices remain deliberately opinionated. No disk identities, credentials, homelab hostnames or secrets belong in a public profile.
 

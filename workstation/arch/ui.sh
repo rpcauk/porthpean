@@ -22,7 +22,7 @@ ui_password() {
       --passwordbox 'Enter password:' 10 72 3>&1 1>&2); then return 1; fi
     if [[ -z $first || $first == *$'\n'* || $first == *$'\r'* ]]; then
       unset first
-      whiptail --title "$title" --msgbox 'Enter a non-empty, single-line password.' 9 72 >&2 || return 1
+      whiptail --title "$title" --msgbox 'Enter a non-empty, single-line password.' 9 72 >&2 || true
       continue
     fi
     if ! second=$(whiptail --title "$title" --output-fd 3 \
@@ -33,7 +33,7 @@ ui_password() {
       return 0
     fi
     unset first second
-    whiptail --title "$title" --msgbox 'Passwords did not match. Try again.' 9 72 >&2 || return 1
+    whiptail --title "$title" --msgbox 'Passwords did not match. Try again.' 9 72 >&2 || true
   done
 }
 
@@ -47,6 +47,6 @@ ui_set_account_password() {
       return 0
     fi
     unset secret
-    whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || return 1
+    whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || true
   done
 }

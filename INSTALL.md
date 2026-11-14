@@ -2,9 +2,9 @@
 
 Opinionated Arch Linux workstation configuration for a ThinkPad T480s, with a small reusable core. This public repository distributes the installer until a dedicated website exists. The Porthpean application and workstation infrastructure remain separate.
 
-Start with [USB preparation and encrypted base installation](docs/arch-usb-install.md). That base stage creates only a password-protected `admin` account. [`arch-install.sh`](arch-install.sh) guides a fresh live-USB installation. It always erases the explicitly confirmed Linux disk, including a partial installation; no resume modes. It can safely unmount its known partial-install tree and close its target encryption mapping before formatting, and stops if they are busy or unrelated. Run `arch-install.sh` only from the Arch live USB. Run the desktop bootstrap below only from the installed base. Neither is intended for an existing server.
+Start with [USB preparation and encrypted base installation](docs/arch-usb-install.md). That base stage creates only the password-protected `root` account. [`arch-install.sh`](arch-install.sh) guides a fresh live-USB installation. It always erases the explicitly confirmed Linux disk, including a partial installation; no resume modes. It can safely unmount its known partial-install tree and close its target encryption mapping before formatting, and stops if they are busy or unrelated. Run `arch-install.sh` only from the Arch live USB. Run the desktop bootstrap below only from the installed base. Neither is intended for an existing server.
 
-From the public `main` branch, from the installed base as `admin`:
+From the public `main` branch, from the installed base as `root`:
 
 ```sh
 INSTALLER=$(mktemp)
@@ -12,17 +12,17 @@ curl --fail --show-error --location --proto '=https' --tlsv1.2 \
   https://raw.githubusercontent.com/rpcauk/porthpean/main/install.sh \
   -o "$INSTALLER"
 less "$INSTALLER"
-sudo bash "$INSTALLER"
+bash "$INSTALLER"
 ```
 
-Review the installer and repository in advance; the entry script prints the checkout revision. No `curl | sudo bash`; `main` is mutable, not a signed release.
+Review the installer and repository in advance; the entry script prints the checkout revision. Do not pipe downloads directly into a shell; `main` is mutable, not a signed release.
 
 Whiptail dialogs ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Hidden whiptail boxes collect and confirm all installer passwords; secrets go to system tools through stdin, not command arguments or files. The daily and agent accounts have no sudo. Vendor CLI installation and authentication remain separate interactive steps.
 
 ## Scope
 
 - Reusable: account prompts, package/file convergence, isolated optional agent accounts, checks and explicit confirmation.
-- Opinionated: Arch/systemd, Niri desktop, official package list, separate administrator, manual upgrades and private-network access.
+- Opinionated: Arch/systemd, Niri desktop, official package list, root for administration, manual upgrades and private-network access.
 - Personal profile: GB keyboard defaults for `t480s`; chosen hostname and disk design in the manual guide.
 - Local only: disk identity, passwords, provider credentials, backup destination/keys and signing keys. Never commit these.
 

@@ -3,18 +3,17 @@ set +x
 set +v
 set +a
 set -euo pipefail
-[[ $EUID -eq 0 ]] || { echo 'Run from admin with sudo, after reviewing this directory.' >&2; exit 1; }
+[[ $EUID -eq 0 ]] || { echo 'Run as root after reviewing this directory.' >&2; exit 1; }
 source /etc/os-release
 [[ $ID == arch && $(uname -m) == x86_64 ]] || { echo 'Arch x86_64 only'; exit 1; }
 [[ $# == 0 ]] || { echo 'Usage: bash bootstrap (interactive)'; exit 1; }
 [[ -t 0 && -t 1 ]] || { echo 'Run interactively, not piped from curl.'; exit 1; }
-getent passwd admin >/dev/null || { echo 'Create admin using the base installation guide first.'; exit 1; }
 base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 command -v whiptail >/dev/null || { echo 'Install the dialog dependency first: pacman -Syu --needed libnewt'; exit 1; }
 source "$base/ui.sh"
 if ! daily_user=$(ui_input 'Daily account' 'Choose your daily username:' ryan); then ui_cancel; fi
 [[ ${#daily_user} -le 32 && $daily_user =~ ^[a-z][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
-[[ $daily_user != root && $daily_user != admin && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
+[[ $daily_user != root && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
 existing=false
 if getent passwd "$daily_user" >/dev/null; then
   existing=true

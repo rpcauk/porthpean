@@ -25,7 +25,7 @@ ui_password() {
       --passwordbox 'Enter password:' 10 72 3>&1 1>&2); then return 1; fi
     if [[ -z $first || $first == *$'\n'* || $first == *$'\r'* ]]; then
       unset first
-      whiptail --title "$title" --msgbox 'Enter a non-empty, single-line password.' 9 72 >&2 || return 1
+      whiptail --title "$title" --msgbox 'Enter a non-empty, single-line password.' 9 72 >&2 || true
       continue
     fi
     if ! second=$(whiptail --title "$title" --output-fd 3 \
@@ -36,7 +36,7 @@ ui_password() {
       return 0
     fi
     unset first second
-    whiptail --title "$title" --msgbox 'Passwords did not match. Try again.' 9 72 >&2 || return 1
+    whiptail --title "$title" --msgbox 'Passwords did not match. Try again.' 9 72 >&2 || true
   done
 }
 
@@ -50,20 +50,28 @@ set_target_password() {
       return 0
     fi
     unset secret
-    whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || return 1
+    whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || true
   done
 }
 format_and_unlock() {
-  local partition=$1
+  local partition=$1 status
   if ! printf '%s' "$drive_pass" | cryptsetup luksFormat --type luks2 --batch-mode --key-file - "$partition"; then
     unset drive_pass
     return 1
   fi
-  if ! printf '%s' "$drive_pass" | cryptsetup open --key-file - "$partition" cryptroot; then
+  while true; do
+    if printf '%s' "$drive_pass" | cryptsetup open --key-file - "$partition" cryptroot; then
+      unset drive_pass
+      return 0
+    else
+      status=$?
+    fi
     unset drive_pass
-    return 1
-  fi
-  unset drive_pass
+    # Retry a rejected unlock secret, never reformat an existing LUKS header.
+    [[ $status == 2 ]] || return "$status"
+    whiptail --title 'Drive password' --msgbox 'The password was not accepted. Try again.' 9 72 >&2 || true
+    if ! drive_pass=$(ui_password 'Unlock encrypted drive'); then return 1; fi
+  done
 }
 
 ui_input() {
@@ -281,10 +289,10 @@ while IFS= read -r target; do
 done <<< "$targets"
 findmnt -R /mnt
 lsblk -o PATH,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINTS "/dev/$parent"
-printf 'Install/configure base at /mnt; hostname %s; admin + emergency root passwords will be requested.\n' "$host"
+printf 'Install/configure base at /mnt; hostname %s; the root password will be requested.\n' "$host"
 echo 'Fresh layout created. Installing the base; keep AC power and internet connected.'
 pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
-  btrfs-progs cryptsetup dosfstools networkmanager sudo git curl \
+  btrfs-progs cryptsetup dosfstools networkmanager git curl \
   neovim less libnewt man-db man-pages mkinitcpio efibootmgr systemd-ukify
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
 genfstab -U /mnt > /mnt/etc/fstab
@@ -311,16 +319,7 @@ printf 'KEYMAP=uk\n' > /etc/vconsole.conf
 printf '%s\n' "$host" > /etc/hostname
 printf '127.0.0.1 localhost\n::1 localhost\n127.0.1.1 %s\n' "$host" > /etc/hosts
 systemctl enable NetworkManager systemd-timesyncd
-if ! id admin >/dev/null 2>&1; then
-  useradd -m -U -G wheel -s /bin/bash admin
-else
-  [[ $(id -u admin) -ge 1000 && $(getent passwd admin | cut -d: -f6) == /home/admin ]] || exit 1
-fi
-chmod 700 /home/admin
-mkdir -p /etc/sudoers.d
-printf 'admin ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-admin
-chmod 0440 /etc/sudoers.d/10-admin
-visudo -cf /etc/sudoers
+chmod 0700 /root
 mkdir -p /etc/kernel /efi/EFI/Linux
 printf 'rd.luks.name=%s=cryptroot root=/dev/mapper/cryptroot rootflags=subvol=@ rw\n' "$luks_uuid" > /etc/kernel/cmdline
 sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)/' /etc/mkinitcpio.conf
@@ -345,11 +344,10 @@ bootctl --esp-path=/efi list
 pacman -Q linux-lts linux intel-ucode
 systemctl is-enabled NetworkManager
 CHROOT
-if ! set_target_password admin; then cancel; fi
 if ! set_target_password root; then cancel; fi
 printf 'Completed %s\n' "$(date -Iseconds)" > /mnt/root/porthpean-base-complete
 installation_started=false
-if whiptail --title 'Base installation complete' --defaultno --yesno 'Base installed. After reboot, log in as admin and run the workstation bootstrap.\n\nReboot now? Remove the USB when the computer restarts.' 12 76; then
+if whiptail --title 'Base installation complete' --defaultno --yesno 'Base installed. After reboot, log in as root and run the workstation bootstrap.\n\nReboot now? Remove the USB when the computer restarts.' 12 76; then
   cd /
   umount -R /mnt
   cryptsetup close cryptroot

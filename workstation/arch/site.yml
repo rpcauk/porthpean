@@ -58,7 +58,7 @@
         that:
           - ansible_facts.distribution == 'Archlinux'
           - daily_user is match('^[a-z][a-z0-9_-]*$')
-          - daily_user not in ['root', 'admin', 'codex', 'amp']
+          - daily_user not in ['root', 'codex', 'amp']
           - agent_users is sequence
           - agent_users is not string
           - agent_users | difference(['codex', 'amp']) | length == 0

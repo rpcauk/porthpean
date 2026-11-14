@@ -1,6 +1,6 @@
 # T480s: USB → encrypted Arch base → workstation bootstrap
 
-Chosen values: **daily user `ryan`, hostname `t480s`, admin user `admin`, agent users `codex` and `amp`**. Linux SSD: **1 TB**. Windows: separate **512 GB WWAN SSD, preserve completely**. This replaces the VM-first rollout: install directly on the ThinkPad, using explicit checkpoints. These are instructions to execute yourself; no installation has been executed or hardware-tested here.
+Chosen values: **daily user `ryan`, hostname `t480s`, privileged account `root`, agent users `codex` and `amp`**. Linux SSD: **1 TB**. Windows: separate **512 GB WWAN SSD, preserve completely**. This replaces the VM-first rollout: install directly on the ThinkPad, using explicit checkpoints. These are instructions to execute yourself; no installation has been executed or hardware-tested here.
 
 Read this on another device while installing. Execute one block at a time and stop on any unexpected output. Do not paste the entire document into a shell. The only values you must discover are USB identity, Linux SSD identity, Wi-Fi interface/SSID if needed, and private passwords. Disk IDs and passwords cannot safely be supplied in advance.
 
@@ -29,7 +29,7 @@ It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, ac
 
 If whiptail is absent from the live USB, the script installs `libnewt` into that disposable live environment before showing the dialogs. No target disk is changed by that dependency installation.
 
-The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and admin/emergency root passwords. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
+The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and root account password. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 
 After the console base boots, use the separate `install.sh` entry point in section 8 for the daily user/password, desktop and optional AI accounts. No need to repeat the manual commands below when their guided equivalents completed successfully.
 
@@ -215,7 +215,7 @@ Root includes `/var/lib/pacman` and kernel modules so they restore together. Hom
 
 ```sh
 pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
-  btrfs-progs cryptsetup dosfstools networkmanager sudo git curl \
+  btrfs-progs cryptsetup dosfstools networkmanager git curl \
   neovim less libnewt man-db man-pages mkinitcpio efibootmgr systemd-ukify
 ```
 
@@ -247,19 +247,13 @@ HOSTS
 systemctl enable NetworkManager systemd-timesyncd
 ```
 
-Create only the administrator during the manual base install. The bootstrap will later prompt for the daily username/password and optional agent accounts:
+Set the root password for local administration. The bootstrap will later create the daily user and optional agent accounts; no separate `admin` account is created:
 
 ```sh
-useradd -m -U -G wheel -s /bin/bash admin
-chmod 700 /home/admin
-passwd admin
-passwd
-install -m 0440 /dev/null /etc/sudoers.d/10-admin
-printf 'admin ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-admin
-visudo -cf /etc/sudoers
+passwd root
 ```
 
-The last `passwd` sets a unique emergency root password. The admin sudo rule requires its password. Retain root recovery initially; decide later whether to lock root after testing recovery. Do not add a `%wheel NOPASSWD` rule.
+The daily account stays unprivileged. Use a local root login or `su -` with the root password for maintenance. No passwordless sudo rule is installed.
 
 ## 7. Build UKIs and install Linux-owned boot files
 
@@ -340,7 +334,7 @@ cryptsetup close cryptroot
 reboot
 ```
 
-Remove installer USB as the machine restarts. Unlock LUKS, boot LTS and log in as `admin`. Test `sudo -v`. The daily account does not exist yet. For Wi-Fi on the installed base, use `nmtui` from an admin/root session to connect. Confirm internet and `uname -r`, then test the regular-kernel entry once before installing the desktop.
+Remove installer USB as the machine restarts. Unlock LUKS, boot LTS and log in as `root`. The daily account does not exist yet. For Wi-Fi on the installed base, use `nmtui` from the root session to connect. Confirm internet and `uname -r`, then test the regular-kernel entry once before installing the desktop.
 
 **This is the base-install checkpoint.** A working encrypted text-console system is enough to run the bootstrap.
 
@@ -348,7 +342,7 @@ Remove installer USB as the machine restarts. Unlock LUKS, boot LTS and log in a
 
 The public distribution repository is [rpcauk/porthpean](https://github.com/rpcauk/porthpean). The maintainer uses `git@github.com:rpcauk/porthpean.git`; new machines use anonymous HTTPS, so no GitHub SSH key is needed during setup. Do not run the existing Mac dotfiles bootstrap on Arch.
 
-Log in as `admin` on the installed system:
+Log in as `root` on the installed system:
 
 ```sh
 INSTALLER=$(mktemp)
@@ -356,20 +350,20 @@ curl --fail --show-error --location --proto '=https' --tlsv1.2 \
   https://raw.githubusercontent.com/rpcauk/porthpean/main/install.sh \
   -o "$INSTALLER"
 less "$INSTALLER"
-sudo bash "$INSTALLER"
+bash "$INSTALLER"
 ```
 
 Do not execute a failed/empty download. The entry script clones the public repository into a private root-owned directory and prints the exact revision. The whiptail bootstrap then opens. Review `workstation/arch/bootstrap`, `site.yml` and managed files in advance when inspecting the repository. Tracking `main` is convenient but mutable; compare/record the revision and later prefer a reviewed pinned release. A trusted first-stage file alone does not authenticate all subsequently fetched code.
 
-The bootstrap uses whiptail for the daily username (default `ryan`), a checklist of Codex/Amp accounts, and one setup confirmation. The daily password uses hidden whiptail boxes (entered twice). Existing usable passwords are preserved unless you choose to change them.
+The bootstrap uses whiptail for the daily username (default `ryan`), a checklist of Codex/Amp accounts, and one setup confirmation. The daily password uses hidden whiptail boxes (entered twice). Existing usable passwords are preserved unless you choose to change them. Empty/mismatched entries and rejected passwords reopen the dialog; Cancel stops setup.
 
-Passwords stay briefly in non-exported shell memory, are passed to the system tools through pipes, and are then unset. They are not passed to Ansible or saved in arguments, files or configuration. Shell tracing/verbose output is disabled before collecting secrets; shell memory erasure is not guaranteed. Agents have locked passwords and no sudo, not shared copies of the daily/admin password. Declining an optional agent does not delete an account created on an earlier run.
+Passwords stay briefly in non-exported shell memory, are passed to the system tools through pipes, and are then unset. They are not passed to Ansible or saved in arguments, files or configuration. Shell tracing/verbose output is disabled before collecting secrets; shell memory erasure is not guaranteed. Agents have locked passwords and no sudo, not shared copies of the daily/root password. Declining an optional agent does not delete an account created on an earlier run.
 
-The script creates the daily account, performs a complete official repository upgrade, installs the desktop/tooling and selected agent infrastructure, and enables greetd/firewall for the **next boot**. It does not format disks, enroll firmware keys, log into vendors, start SSH, deploy the Porthpean app or install an AUR helper. Stop on any failure and keep the admin console usable.
+The script creates the daily account, performs a complete official repository upgrade, installs the desktop/tooling and selected agent infrastructure, and enables greetd/firewall for the **next boot**. It does not format disks, enroll firmware keys, log into vendors, start SSH, deploy the Porthpean app or install an AUR helper. Stop on any failure and keep the root console usable.
 
 Offline transfer is still possible: copy the reviewed `workstation/arch/` directory from the Mac to a second ordinary USB, transfer it to a root-owned directory on Arch and run `bash bootstrap` there. Do not run unreviewed root scripts from a directory writable by another account.
 
-After successful bootstrap, use the whiptail reboot choice. As admin/root, test `sudo -l -U ryan`: the daily account must have no sudo authorization. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
+After successful bootstrap, use the whiptail reboot choice. As root, check `id ryan`: the daily account must not belong to privileged groups such as wheel, disk or docker. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
 
 The firewall file is a fresh standalone workstation ruleset and replaces any prior nftables file with a backup. It denies unsolicited inbound traffic including SSH; later Tailscale/container/network integration needs its own reviewed policy. Use this bootstrap on this fresh base, not on an already network-managed server.
 
@@ -377,7 +371,7 @@ The firewall file is a fresh standalone workstation ruleset and replaces any pri
 
 The bootstrap creates accounts, workspaces and operating guidance, **not** privileged background services. Start each vendor installer as its own account; the included helper downloads the vendor script to a temporary file, shows its checksum and opens it in a whiptail viewer, then asks for confirmation before execution. Inspect additional downloads as part of trusting the vendor installer. This is still network code execution, not a reproducible pinned package.
 
-From an admin root shell, copy the helper into root-owned executable storage:
+From a root shell, copy the helper into root-owned executable storage:
 
 ```sh
 # Replace this with the root-owned review copy printed by install.sh:
@@ -393,16 +387,16 @@ exit
 
 Open a fresh login shell for each account after installation; confirm the binary is in that account's PATH, and inspect `command -v codex` / `command -v amp` plus `--version`. As `codex`, run `codex` and sign in interactively using your own subscription/authentication flow. As `amp`, run `amp login`, then `amp`. Do not copy the Mac's credentials or place API keys in commands, scripts or shared environment files. Both agents contact external providers; dedicated accounts do not make submitted code private/offline. Review provider retention/sharing settings before sending sensitive repositories.
 
-Interactive sessions from an admin shell:
+Interactive sessions from a root shell:
 
 ```sh
-sudo -iu codex
+su - codex
 cd ~/Projects
 tmux new-session -A -s codex
 # Inside tmux: cd into this account's own clone, then run codex.
 ```
 
-For Amp use `sudo -iu amp` and `tmux new-session -A -s amp`. Detach with Ctrl-B then D. Do not run both agents against the same writable checkout. Give each a separate clone and branch; review and integrate commits as the human. A root/admin operator can copy patches into the daily user's repository; agents cannot directly read `/home/ryan`.
+For Amp use `su - amp` and `tmux new-session -A -s amp`. Detach with Ctrl-B then D. Do not run both agents against the same writable checkout. Give each a separate clone and branch; review and integrate commits as the human. A root operator can copy patches into the daily user's repository; agents cannot directly read `/home/ryan`.
 
 No SSH listener, Tailscale enrollment, login linger, automatic tmux startup, Codex HTTP wrapper, agent sudo, Docker socket or production kubeconfig is configured. Local tmux sessions may not survive all logout/session-manager policies; keep the operator session while working. Persistent remote use is a later explicit step following the existing dotfiles `docs/codex-homelab.md`, with private-network policy and independently scoped credentials. Do not disable sandbox/approval controls.
 
@@ -418,7 +412,7 @@ These are follow-up setup gates, not features the initial script silently claims
 
 ## 11. Checks and rescue
 
-Before adopting as the daily machine: boot both kernels; test daily/admin separation, audio, Wi-Fi reconnect, lock before suspend, repeated resume, TrackPoint/touchpad, display/dock, and backup restore. Check `systemctl --failed`, `systemctl --user --failed`, `wpctl status`, `nft list ruleset` as admin, and `sudo -l -U codex` / `sudo -l -U amp` (both denied). Verify both agent homes are mode 700 and neither has privileged groups. If greetd fails, use Ctrl-Alt-F2 and log into the admin text console.
+Before adopting as the daily machine: boot both kernels; test daily/root separation, audio, Wi-Fi reconnect, lock before suspend, repeated resume, TrackPoint/touchpad, display/dock, and backup restore. Check `systemctl --failed`, `systemctl --user --failed`, `wpctl status`, `nft list ruleset` as root, and `id codex` / `id amp` (neither privileged). Verify both agent homes are mode 700 and neither has privileged groups. If greetd fails, use Ctrl-Alt-F2 and log into the root text console.
 
 If boot fails: reinsert installer USB, boot UEFI with the documented temporary Secure Boot setting, reconnect networking only if needed, identify Linux partitions again, then:
 
