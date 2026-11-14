@@ -1,10 +1,71 @@
 #!/usr/bin/env bash
-# Run from the official Arch USB as root. No passwords are stored by this script.
+# Run from the official Arch USB as root. Passwords exist briefly in memory, never saved.
+set +x
+set +v
+set +a
+unset drive_pass
 set -euo pipefail
 export LC_ALL=C
 umask 077
 fail() { printf 'STOP: %s\n' "$*" >&2; exit 1; }
-cancel() { echo 'Cancelled.'; exit 0; }
+cancel() {
+  unset drive_pass
+  if [[ ${installation_started:-false} == true ]]; then
+    whiptail --title 'Setup stopped' --msgbox 'Installation is incomplete. You can restart this installer to erase the target and try again.' 10 76 || true
+  fi
+  exit 0
+}
+# Return a confirmed secret on stdout only; dialog rendering stays on the terminal.
+# Callers must keep xtrace/verbose/allexport disabled and unset the result promptly.
+ui_password() {
+  local title=$1 first second
+  export -n first second
+  while true; do
+    if ! first=$(whiptail --title "$title" --output-fd 3 \
+      --passwordbox 'Enter password:' 10 72 3>&1 1>&2); then return 1; fi
+    if [[ -z $first || $first == *$'\n'* || $first == *$'\r'* ]]; then
+      unset first
+      whiptail --title "$title" --msgbox 'Enter a non-empty, single-line password.' 9 72 >&2 || return 1
+      continue
+    fi
+    if ! second=$(whiptail --title "$title" --output-fd 3 \
+      --passwordbox 'Repeat password:' 10 72 3>&1 1>&2); then unset first; return 1; fi
+    if [[ $first == "$second" ]]; then
+      printf '%s' "$first"
+      unset first second
+      return 0
+    fi
+    unset first second
+    whiptail --title "$title" --msgbox 'Passwords did not match. Try again.' 9 72 >&2 || return 1
+  done
+}
+
+set_target_password() {
+  local account=$1 secret
+  export -n secret
+  while true; do
+    if ! secret=$(ui_password "$account account password"); then return 1; fi
+    if printf '%s:%s\n' "$account" "$secret" | arch-chroot /mnt chpasswd; then
+      unset secret
+      return 0
+    fi
+    unset secret
+    whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || return 1
+  done
+}
+format_and_unlock() {
+  local partition=$1
+  if ! printf '%s' "$drive_pass" | cryptsetup luksFormat --type luks2 --batch-mode --key-file - "$partition"; then
+    unset drive_pass
+    return 1
+  fi
+  if ! printf '%s' "$drive_pass" | cryptsetup open --key-file - "$partition" cryptroot; then
+    unset drive_pass
+    return 1
+  fi
+  unset drive_pass
+}
+
 ui_input() {
   whiptail --backtitle 'Porthpean - Arch Linux' --title "$1" --output-fd 3 \
     --inputbox "$2" 10 72 "$3" 3>&1 1>&2
@@ -125,6 +186,7 @@ clear_partial_install() {
 }
 
 main() {
+trap 'unset drive_pass' EXIT
 trap 'printf "Stopped at line %s. Inspect the error; mounted filesystems are left in place. Rerunning this installer starts over and ERASES the selected disk after confirmation.\n" "$LINENO" >&2' ERR
 
 # These checks run before any mutation, including prompts which could mislead on another OS.
@@ -157,7 +219,9 @@ serial=$(lsblk -dnro SERIAL "$disk")
 serial=${serial## }; serial=${serial%% }
 [[ -n $serial ]] || fail 'No hardware serial reported. Resolve disk identity manually.'
 [[ $(blockdev --getsize64 "$disk") -ge 34359738368 ]] || fail 'Target is smaller than 32 GiB.'
+if ! drive_pass=$(ui_password 'Drive encryption passphrase'); then cancel; fi
 if ! confirm_erase "$disk"; then cancel; fi
+installation_started=true
 # Recheck immediately before the first destructive operation.
 [[ $(readlink -f -- "$disk_id") == "$disk" && $(lsblk -dnro SERIAL "$disk") == "$serial" ]] || fail 'Disk identity changed.'
 clear_partial_install "$disk"
@@ -171,9 +235,7 @@ esp=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 1 {print $1}')
 crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
 [[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
 mkfs.fat -F 32 -n ARCH_EFI "$esp"
-echo 'Set the DRIVE passphrase at cryptsetup prompts; then enter it again to unlock.'
-cryptsetup luksFormat --type luks2 --batch-mode --verify-passphrase "$crypt"
-cryptsetup open "$crypt" cryptroot
+format_and_unlock "$crypt"
 mkfs.btrfs -L archroot /dev/mapper/cryptroot
 mount /dev/mapper/cryptroot /mnt
 for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub"; done
@@ -255,10 +317,6 @@ else
   [[ $(id -u admin) -ge 1000 && $(getent passwd admin | cut -d: -f6) == /home/admin ]] || exit 1
 fi
 chmod 700 /home/admin
-echo 'Set ADMIN account password (not the disk passphrase):'
-passwd admin </dev/tty
-echo 'Set a separate emergency ROOT password:'
-passwd root </dev/tty
 mkdir -p /etc/sudoers.d
 printf 'admin ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-admin
 chmod 0440 /etc/sudoers.d/10-admin
@@ -286,12 +344,17 @@ printf 'title Arch Linux regular kernel\nefi /EFI/Linux/arch-linux.efi\n' > /efi
 bootctl --esp-path=/efi list
 pacman -Q linux-lts linux intel-ucode
 systemctl is-enabled NetworkManager
-printf 'Completed %s\n' "$(date -Iseconds)" > /root/porthpean-base-complete
 CHROOT
-printf '\nBase installed. No reboot/unmount is automatic. Review errors above and /mnt/etc/fstab.\n'
-echo 'Secure Boot remains in its existing state; signed-key enrollment is not performed.'
-echo 'When satisfied: umount -R /mnt; cryptsetup close cryptroot; reboot'
-echo 'After reboot: log in as admin, check networking, then follow INSTALL.md for the daily user/desktop/agents.'
+if ! set_target_password admin; then cancel; fi
+if ! set_target_password root; then cancel; fi
+printf 'Completed %s\n' "$(date -Iseconds)" > /mnt/root/porthpean-base-complete
+installation_started=false
+if whiptail --title 'Base installation complete' --defaultno --yesno 'Base installed. After reboot, log in as admin and run the workstation bootstrap.\n\nReboot now? Remove the USB when the computer restarts.' 12 76; then
+  cd /
+  umount -R /mnt
+  cryptsetup close cryptroot
+  reboot
+fi
 
 }
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

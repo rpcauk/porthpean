@@ -12,9 +12,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 curl --fail --show-error --location --proto '=https' --tlsv1.2 "$url" -o "$scratch/install.sh"
 sha256sum "$scratch/install.sh"
-less "$scratch/install.sh"
-echo "Installer from $url runs as $who and can access this account's files/network. It may fetch additional code."
-read -r -p 'Type INSTALL after review: ' answer
-[[ $answer == INSTALL ]] || exit 1
+whiptail --title "$who installer" --scrolltext --textbox "$scratch/install.sh" 22 78 || exit 0
+whiptail --title "Install $who" --defaultno --yesno "Run the vendor installer from $url as $who?" 11 76 || exit 0
 "$interpreter" "$scratch/install.sh"
 echo 'Open a fresh login shell; check PATH and CLI version. Authenticate interactively; do not copy another account’s auth files.'

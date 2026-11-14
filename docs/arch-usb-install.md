@@ -29,7 +29,7 @@ It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, ac
 
 If whiptail is absent from the live USB, the script installs `libnewt` into that disposable live environment before showing the dialogs. No target disk is changed by that dependency installation.
 
-The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. It delegates hidden encryption/account prompts to cryptsetup/passwd, creates only admin and emergency root credentials, and leaves reboot/unmount to you. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
+The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and admin/emergency root passwords. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 
 After the console base boots, use the separate `install.sh` entry point in section 8 for the daily user/password, desktop and optional AI accounts. No need to repeat the manual commands below when their guided equivalents completed successfully.
 
@@ -361,21 +361,21 @@ sudo bash "$INSTALLER"
 
 Do not execute a failed/empty download. The entry script clones the public repository into a private root-owned directory and prints the exact revision. The whiptail bootstrap then opens. Review `workstation/arch/bootstrap`, `site.yml` and managed files in advance when inspecting the repository. Tracking `main` is convenient but mutable; compare/record the revision and later prefer a reviewed pinned release. A trusted first-stage file alone does not authenticate all subsequently fetched code.
 
-The bootstrap uses whiptail for the daily username (default `ryan`), a checklist of Codex/Amp accounts, and one setup confirmation. The daily password uses standard `passwd` prompts (hidden, twice). Existing usable passwords are preserved unless you choose to change them.
+The bootstrap uses whiptail for the daily username (default `ryan`), a checklist of Codex/Amp accounts, and one setup confirmation. The daily password uses hidden whiptail boxes (entered twice). Existing usable passwords are preserved unless you choose to change them.
 
-Passwords are not passed to Ansible or stored in variables, arguments or configuration. Agents have locked passwords and no sudo, not shared copies of the daily/admin password. Declining an optional agent does not delete an account created on an earlier run.
+Passwords stay briefly in non-exported shell memory, are passed to the system tools through pipes, and are then unset. They are not passed to Ansible or saved in arguments, files or configuration. Shell tracing/verbose output is disabled before collecting secrets; shell memory erasure is not guaranteed. Agents have locked passwords and no sudo, not shared copies of the daily/admin password. Declining an optional agent does not delete an account created on an earlier run.
 
 The script creates the daily account, performs a complete official repository upgrade, installs the desktop/tooling and selected agent infrastructure, and enables greetd/firewall for the **next boot**. It does not format disks, enroll firmware keys, log into vendors, start SSH, deploy the Porthpean app or install an AUR helper. Stop on any failure and keep the admin console usable.
 
 Offline transfer is still possible: copy the reviewed `workstation/arch/` directory from the Mac to a second ordinary USB, transfer it to a root-owned directory on Arch and run `bash bootstrap` there. Do not run unreviewed root scripts from a directory writable by another account.
 
-After successful bootstrap, first test `sudo -l -U ryan` as admin/root: the daily account must have no sudo authorization. Then reboot deliberately. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
+After successful bootstrap, use the whiptail reboot choice. As admin/root, test `sudo -l -U ryan`: the daily account must have no sudo authorization. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
 
 The firewall file is a fresh standalone workstation ruleset and replaces any prior nftables file with a backup. It denies unsolicited inbound traffic including SSH; later Tailscale/container/network integration needs its own reviewed policy. Use this bootstrap on this fresh base, not on an already network-managed server.
 
 ## 9. Install and authenticate the two agents
 
-The bootstrap creates accounts, workspaces and operating guidance, **not** privileged background services. Start each vendor installer as its own account; the included helper downloads the vendor script to a temporary file, shows its checksum and opens it in `less`, then requires `INSTALL` before execution. Inspect additional downloads as part of trusting the vendor installer. This is still network code execution, not a reproducible pinned package.
+The bootstrap creates accounts, workspaces and operating guidance, **not** privileged background services. Start each vendor installer as its own account; the included helper downloads the vendor script to a temporary file, shows its checksum and opens it in a whiptail viewer, then asks for confirmation before execution. Inspect additional downloads as part of trusting the vendor installer. This is still network code execution, not a reproducible pinned package.
 
 From an admin root shell, copy the helper into root-owned executable storage:
 

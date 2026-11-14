@@ -10,7 +10,7 @@ From a reviewed root-owned checkout, as root:
 bash bootstrap
 ```
 
-Whiptail dialogs select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. The new daily password is set with standard hidden `passwd` prompts; existing passwords are retained unless changed explicitly. No password/hash enters Ansible variables, command arguments or saved configuration. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
+Whiptail dialogs select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. Hidden whiptail password boxes collect and confirm the daily password, which goes to chpasswd through stdin; existing passwords are retained unless changed explicitly. Passwords stay briefly in non-exported shell memory and are unset after use. No password/hash enters Ansible variables, command arguments or saved configuration. Tracing is disabled; shell memory wiping cannot be guaranteed. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
 
 The reusable core handles accounts and convergence. The current profile specifies GB keyboard defaults. Packages and desktop choices remain deliberately opinionated. No disk identities, credentials, homelab hostnames or secrets belong in a public profile.
 

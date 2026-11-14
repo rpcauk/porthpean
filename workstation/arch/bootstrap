@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+set +x
+set +v
+set +a
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run from admin with sudo, after reviewing this directory.' >&2; exit 1; }
 source /etc/os-release
@@ -37,26 +40,24 @@ for agent in "${agents[@]}"; do
   fi
 done
 if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall packages, desktop and account configuration?"; then ui_cancel; fi
-# Never read passwords into variables, command arguments or Ansible data.
-# A newly created daily account remains locked if passwd or provisioning fails.
+# Secrets stay briefly in non-exported local variables and go to chpasswd over stdin.
 if [[ $existing == false ]]; then
   useradd -m -U -s /bin/bash "$daily_user"
   chmod 700 "/home/$daily_user"
-  passwd "$daily_user"
+  if ! ui_set_account_password "$daily_user"; then ui_cancel; fi
 else
   status=$(passwd -S "$daily_user" | awk '{print $2}')
   if [[ $status != P ]]; then
     echo 'A usable daily-account password must be set.'
-    passwd "$daily_user"
+    if ! ui_set_account_password "$daily_user"; then ui_cancel; fi
   else
     if ui_yesno 'Account password' 'Change the existing daily-account password?'; then
-      passwd "$daily_user"
+      if ! ui_set_account_password "$daily_user"; then ui_cancel; fi
     fi
   fi
 fi
-pacman -Syu --needed ansible-core python
+pacman -Syu --needed --noconfirm ansible-core python
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
 ansible-playbook -i localhost, -c local "$base/site.yml" -e "@$base/profiles/t480s.yml" -e "$vars"
-echo 'Configuration applied. Reboot deliberately, then log in as the daily user.'
-echo 'Vendor agent installation/login remains a separate unprivileged interactive step.'
+if ui_yesno 'Workstation ready' "Configuration applied. Log in as $daily_user after reboot.\n\nReboot now?"; then reboot; fi
