@@ -592,7 +592,7 @@ mkdir -p /efi/loader/entries
 printf 'default lts.conf\ntimeout 5\neditor no\n' > /efi/loader/loader.conf
 printf 'title Arch Linux LTS\nefi /EFI/Linux/arch-lts.efi\n' > /efi/loader/entries/lts.conf
 printf 'title Arch Linux regular kernel\nefi /EFI/Linux/arch-linux.efi\n' > /efi/loader/entries/linux.conf
-bootctl --esp-path=/efi list
+bootctl --no-pager --esp-path=/efi list
 pacman -Q linux-lts linux intel-ucode
 systemctl is-enabled NetworkManager
 CHROOT

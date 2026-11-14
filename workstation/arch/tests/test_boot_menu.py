@@ -38,6 +38,11 @@ firmware_records() { :; }
         for text in ['timeout 5', 'default_selection "Arch Linux LTS"', 'menuentry "Windows"', '/EFI/Linux/arch-lts.efi', '/EFI/Microsoft/Boot/bootmgfw.efi']:
             self.assertIn(text, config)
 
+    def test_boot_listing_cannot_open_interactive_pager(self):
+        script = SCRIPT.read_text()
+        self.assertIn("bootctl --no-pager --esp-path=/efi list", script)
+        self.assertNotIn("bootctl --esp-path=/efi list", script)
+
     def test_inactive_entry_blocks_completion(self):
         result, _ = self.run_fixture(active=False)
         self.assertNotEqual(result.returncode, 0)
