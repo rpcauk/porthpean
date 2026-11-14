@@ -7,8 +7,9 @@ source /etc/os-release
 [[ -t 0 && -t 1 ]] || { echo 'Run interactively, not piped from curl.'; exit 1; }
 getent passwd admin >/dev/null || { echo 'Create admin using the base installation guide first.'; exit 1; }
 base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-read -r -p 'Daily username [ryan]: ' daily_user
-daily_user=${daily_user:-ryan}
+command -v whiptail >/dev/null || { echo 'Install the dialog dependency first: pacman -Syu --needed libnewt'; exit 1; }
+source "$base/ui.sh"
+if ! daily_user=$(ui_input 'Daily account' 'Choose your daily username:' ryan); then ui_cancel; fi
 [[ ${#daily_user} -le 32 && $daily_user =~ ^[a-z][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
 [[ $daily_user != root && $daily_user != admin && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
 existing=false
@@ -21,27 +22,21 @@ if getent passwd "$daily_user" >/dev/null; then
   echo "Existing account $daily_user: home permissions and managed desktop files will be updated, with file backups."
 fi
 agents=()
-for agent in codex amp; do
-  read -r -p "Set up dedicated $agent account? [Y/n]: " answer
-  case "$answer" in
-    ''|y|Y|yes|YES) agents+=("$agent") ;;
-    n|N|no|NO) ;;
-    *) echo 'Answer yes or no; rerun to correct.'; exit 1 ;;
-  esac
-done
+if ! selected=$(whiptail --backtitle 'Porthpean workstation' --title 'AI accounts' --output-fd 3 \
+  --separate-output --checklist 'Create dedicated accounts for:' 14 72 4 \
+  codex 'Codex CLI' ON amp 'Amp CLI' ON 3>&1 1>&2); then ui_cancel; fi
+while IFS= read -r agent; do
+  [[ -n $agent ]] || continue
+  [[ $agent == codex || $agent == amp ]] || exit 1
+  agents+=("$agent")
+done <<< "$selected"
 for agent in "${agents[@]}"; do
   if getent passwd "$agent" >/dev/null; then
     [[ $(id -u "$agent") -ge 1000 && $(getent passwd "$agent" | cut -d: -f6) == "/home/$agent" ]] || { echo "Unexpected existing account $agent"; exit 1; }
     echo "Existing $agent account: will enforce locked password and no supplementary groups."
   fi
 done
-printf 'Target: this host (%s), daily user %s, profile t480s (GB keyboard).\n' "$(hostname)" "$daily_user"
-printf 'Agent accounts selected: %s\n' "${agents[*]:-(none)}"
-echo 'System packages, managed desktop files, home permissions, firewall and login configuration will change.'
-echo 'No disk, firmware or remote-service operations. A complete official package upgrade runs first.'
-echo 'Existing agent accounts not selected are left untouched, not deleted.'
-read -r -p 'Type APPLY to continue: ' answer
-[[ $answer == APPLY ]] || exit 1
+if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall packages, desktop and account configuration?"; then ui_cancel; fi
 # Never read passwords into variables, command arguments or Ansible data.
 # A newly created daily account remains locked if passwd or provisioning fails.
 if [[ $existing == false ]]; then
@@ -54,8 +49,9 @@ else
     echo 'A usable daily-account password must be set.'
     passwd "$daily_user"
   else
-    read -r -p 'Change existing daily-account password? [y/N]: ' answer
-    case "$answer" in y|Y|yes|YES) passwd "$daily_user" ;; esac
+    if ui_yesno 'Account password' 'Change the existing daily-account password?'; then
+      passwd "$daily_user"
+    fi
   fi
 fi
 pacman -Syu --needed ansible-core python

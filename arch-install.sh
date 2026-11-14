@@ -4,10 +4,30 @@ set -euo pipefail
 export LC_ALL=C
 umask 077
 fail() { printf 'STOP: %s\n' "$*" >&2; exit 1; }
-confirm() {
-  local expected=$1 answer
-  read -r -p "Type '$expected' to continue: " answer
-  [[ $answer == "$expected" ]] || fail 'Confirmation did not match. Nothing further will run.'
+cancel() { echo 'Cancelled.'; exit 0; }
+ui_input() {
+  whiptail --backtitle 'Porthpean - Arch Linux' --title "$1" --output-fd 3 \
+    --inputbox "$2" 10 72 "$3" 3>&1 1>&2
+}
+select_disk() {
+  local records path type ro removable description
+  local -a options=()
+  records=$(lsblk -dnrpo PATH,TYPE,RO,RM) || return 1
+  while read -r path type ro removable; do
+    [[ $type == disk && $ro == 0 && $removable == 0 ]] || continue
+    description=$(lsblk -dn -o SIZE,MODEL "$path") || return 1
+    options+=("$path" "$description")
+  done <<< "$records"
+  [[ ${#options[@]} -gt 0 ]] || fail 'No writable internal disks found.'
+  whiptail --backtitle 'Porthpean - Arch Linux' --title 'Install disk' --output-fd 3 \
+    --menu 'Select the disk for Arch Linux.' 18 78 8 "${options[@]}" 3>&1 1>&2
+}
+confirm_erase() {
+  local disk=$1 description
+  description=$(lsblk -dn -o SIZE,MODEL "$disk") || return 1
+  whiptail --backtitle 'Porthpean - Arch Linux' --title 'Erase disk' --defaultno \
+    --yes-button 'Erase and install' --no-button 'Cancel' \
+    --yesno "$disk - $description\n\nAll partitions and data on this disk will be erased." 12 78
 }
 is_block_device() { [[ -b $1 ]]; }
 
@@ -32,7 +52,7 @@ same_install_disk() {
   local rootpart=$1 efipart=$2 parent
   [[ $(lsblk -dnro TYPE "$rootpart") == part && $(lsblk -dnro TYPE "$efipart") == part ]] || fail 'Expected root and ESP to be disk partitions.'
   parent=$(lsblk -dnro PKNAME "$rootpart")
-  [[ -n $parent && $(lsblk -dnro PKNAME "$efipart") == "$parent" ]] || fail 'ESP and encrypted root are on different disks; refusing possible Windows ESP.'
+  [[ -n $parent && $(lsblk -dnro PKNAME "$efipart") == "$parent" ]] || fail 'ESP and encrypted root are on different disks.'
   printf '%s\n' "$parent"
 }
 
@@ -118,34 +138,26 @@ done
 exec 9>/run/porthpean-arch-install.lock
 flock -n 9 || fail 'Another instance is running.'
 [[ $# == 0 ]] || fail 'Usage: bash arch-install.sh (always a fresh install; no resume modes)'
-echo 'FRESH INSTALL: this always erases the selected Linux disk after serial-number confirmation.'
-read -r -p 'Hostname [t480s]: ' host
-host=${host:-t480s}
-[[ ${#host} -le 63 && $host =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || fail 'Use a hostname of 1–63 lowercase letters/digits/hyphens, without leading/trailing hyphen.'
-echo 'Profile: UK console keyboard, en_GB.UTF-8, Europe/London, admin account.'
-echo 'Desktop/daily user and optional Codex/Amp accounts are configured after reboot.'
 loadkeys uk
 timedatectl set-ntp true
 if ! curl --fail --silent --show-error --head --connect-timeout 15 https://archlinux.org/ >/dev/null; then
   echo 'Connect Ethernet or use iwctl in another console, then rerun. No disk changes have been made.'
   exit 1
 fi
-lsblk -e7 -o NAME,PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS
-
-
-read -r -p 'Linux disk to ERASE (for example /dev/sda or /dev/nvme0n1): ' disk_id
+# Install only the dialog dependency into the disposable live USB if needed.
+if ! command -v whiptail >/dev/null; then
+  pacman -Sy --needed --noconfirm libnewt
+fi
+if ! host=$(ui_input 'Hostname' 'Name this computer:' t480s); then cancel; fi
+[[ ${#host} -le 63 && $host =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || fail 'Use a hostname of 1–63 lowercase letters/digits/hyphens, without leading/trailing hyphen.'
+if ! disk_id=$(select_disk); then cancel; fi
 disk=$(whole_disk "$disk_id")
 plan_partial_cleanup "$disk"
 serial=$(lsblk -dnro SERIAL "$disk")
 serial=${serial## }; serial=${serial%% }
 [[ -n $serial ]] || fail 'No hardware serial reported. Resolve disk identity manually.'
 [[ $(blockdev --getsize64 "$disk") -ge 34359738368 ]] || fail 'Target is smaller than 32 GiB.'
-echo 'EXACT ERASE TARGET:'
-lsblk -o PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS "$disk"
-echo 'Plan: erase this disk; GPT; 2 GiB EFI partition; remaining LUKS2 + Btrfs.'
-echo 'All partitions and data on this disk will be removed. Select the Linux disk, not the Windows SSD.'
-echo 'Confirm that backups/Windows recovery keys exist and disk model/serial are correct.'
-confirm "ERASE $serial"
+if ! confirm_erase "$disk"; then cancel; fi
 # Recheck immediately before the first destructive operation.
 [[ $(readlink -f -- "$disk_id") == "$disk" && $(lsblk -dnro SERIAL "$disk") == "$serial" ]] || fail 'Disk identity changed.'
 clear_partial_install "$disk"
@@ -160,7 +172,7 @@ crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
 [[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
 mkfs.fat -F 32 -n ARCH_EFI "$esp"
 echo 'Set the DRIVE passphrase at cryptsetup prompts; then enter it again to unlock.'
-cryptsetup luksFormat --type luks2 --verify-passphrase "$crypt"
+cryptsetup luksFormat --type luks2 --batch-mode --verify-passphrase "$crypt"
 cryptsetup open "$crypt" cryptroot
 mkfs.btrfs -L archroot /dev/mapper/cryptroot
 mount /dev/mapper/cryptroot /mnt
@@ -211,7 +223,7 @@ printf 'Install/configure base at /mnt; hostname %s; admin + emergency root pass
 echo 'Fresh layout created. Installing the base; keep AC power and internet connected.'
 pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager sudo git curl \
-  neovim less man-db man-pages mkinitcpio efibootmgr systemd-ukify
+  neovim less libnewt man-db man-pages mkinitcpio efibootmgr systemd-ukify
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
 genfstab -U /mnt > /mnt/etc/fstab
 chmod 0644 /mnt/etc/fstab

@@ -23,9 +23,11 @@ bash /root/arch-install.sh
 
 Run this at the live USB prompt, outside `arch-chroot`, after any current pacstrap has finished. It **always starts from scratch and erases the selected Linux disk**, including any partial installation. There are no resume/continue modes.
 
-It asks only for the target Linux whole-disk path (for example `/dev/sda` or `/dev/nvme0n1`), hostname, and an exact `ERASE <serial>` confirmation. `/dev/sda` means the entire disk, not a partition such as `/dev/sda1`. The displayed model, capacity and serial must identify the Linux SSD; there is no separate Windows-disk prompt. Before confirmation it shows any partial-install mounts/mapping that must be closed. After confirmation it unmounts only the selected disk's known `/mnt` installation tree, closes `cryptroot` only if its backing partition is on that disk, checks the disk is unused, and then repartitions/formats it.
+Whiptail dialogs ask for the hostname and offer a disk-selection menu (for example `/dev/sda` or `/dev/nvme0n1`), followed by one “Erase and install” confirmation, defaulting to Cancel. `/dev/sda` means the entire disk, not a partition such as `/dev/sda1`. The menu displays each disk’s path, model and capacity. The script checks any partial-install mounts/mapping before confirmation. After confirmation it unmounts only the selected disk's known `/mnt` installation tree, closes `cryptroot` only if its backing partition is on that disk, checks the disk is unused, and then repartitions/formats it.
 
-It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, active swap, removable/read-only targets or a target used outside the installation tree. If a process keeps the mount busy, it stops without forced/lazy unmounting or killing processes. Exit chroots and finish/stop the current installer yourself, or reboot back into the USB and reconnect, then rerun. Windows is protected by your correct identity selection, not by a guessed device number or capacity.
+It refuses a different disk mounted under `/mnt`, unexpected mounts/mappings, active swap, removable/read-only targets or a target used outside the installation tree. If a process keeps the mount busy, it stops without forced/lazy unmounting or killing processes. Exit chroots and finish/stop the current installer yourself, or reboot back into the USB and reconnect, then rerun.
+
+If whiptail is absent from the live USB, the script installs `libnewt` into that disposable live environment before showing the dialogs. No target disk is changed by that dependency installation.
 
 The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. It delegates hidden encryption/account prompts to cryptsetup/passwd, creates only admin and emergency root credentials, and leaves reboot/unmount to you. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 
@@ -37,10 +39,8 @@ Validation is limited to shell parsing and mocked safety-guard tests; no actual 
 
 - T480s on AC, backup computer, reliable internet (Ethernet preferred), USB stick of at least 4 GB which can be erased.
 - Backups of anything on the 1 TB SSD: this procedure erases it entirely.
-- Verified Windows backup and BitLocker recovery key if encryption is enabled. Firmware/Secure Boot changes can trigger recovery. Confirm Windows boots before starting.
 - Photograph current firmware boot/security settings. Know how to restore factory Secure Boot keys. Do not clear TPM or delete keys during installation.
 - A second ordinary USB stick for this guide/bootstrap and later recovery files is convenient. Writing the Arch ISO makes its filesystem unsuitable for ordinary drag-and-drop storage.
-- Ideally remove/disconnect the Windows SSD using the Lenovo service procedure and internal-battery precautions. If it stays installed, identify it independently and never mount or select it in the commands below. If unsure which drive is which, stop.
 
 Final initial layout: Linux disk GPT; 2 GiB ESP; remaining space LUKS2/Btrfs; no on-disk swap. Bootstrap adds up to 4 GiB zram. Hibernation is off. The ESP is unencrypted; user and system data are encrypted. Secure Boot remains temporarily disabled for initial installation, then gets a separately reviewed enrollment step. UKIs are used from the first boot, so later signing does not require redesigning the disk.
 
@@ -127,7 +127,7 @@ lsblk -e7 -o NAME,PATH,SIZE,MODEL,SERIAL,TYPE,FSTYPE,MOUNTPOINTS
 ls -l /dev/disk/by-id/
 ```
 
-Find the **1 TB Linux SSD by model AND serial**. The 512 GB Windows SSD is protected. Do not assume `/dev/nvme0n1` is Linux. Set a stable whole-disk identifier, excluding `-part1` etc.:
+Find the **1 TB Linux SSD by model AND serial**. Do not assume `/dev/nvme0n1` is Linux. Set a stable whole-disk identifier, excluding `-part1` etc.:
 
 ```sh
 DISK=/dev/disk/by-id/REPLACE_WITH_VERIFIED_1TB_SSD_ID
@@ -137,7 +137,7 @@ fdisk -l "$DISK"
 swapon --show
 ```
 
-Stop unless the selected device is the backed-up Linux SSD, no partition on it is mounted, and no target partition is active swap. If live media automounted it or enabled swap, resolve that explicitly first. Record the Windows disk identity separately. **Everything on `$DISK` will be lost in the next section.**
+Stop unless the selected device is the backed-up Linux SSD, no partition on it is mounted, and no target partition is active swap. If live media automounted it or enabled swap, resolve that explicitly first. **Everything on `$DISK` will be lost in the next section.**
 
 ## 5. Partition, encrypt, create Btrfs
 
@@ -216,7 +216,7 @@ Root includes `/var/lib/pacman` and kernel modules so they restore together. Hom
 ```sh
 pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager sudo git curl \
-  neovim less man-db man-pages mkinitcpio efibootmgr systemd-ukify
+  neovim less libnewt man-db man-pages mkinitcpio efibootmgr systemd-ukify
 ```
 
 Stop if pacstrap fails; do not chroot into an incomplete installation. Generate fstab exactly once, overwriting the fresh generated file rather than appending duplicates:
@@ -318,7 +318,7 @@ CONF
 bootctl --esp-path=/efi list
 ```
 
-Automatic UKI discovery may show additional equivalent entries. `lts.conf` is the explicit default. This step writes firmware boot entries as well as the **Linux ESP only**; Windows must not be mounted. If `bootctl` fails to write NVRAM, stop and inspect its error; do not delete other boot entries.
+Automatic UKI discovery may show additional equivalent entries. `lts.conf` is the explicit default. This step writes firmware boot entries as well as the **Linux ESP only**; Other disks are not used. If `bootctl` fails to write NVRAM, stop and inspect its error; do not delete other boot entries.
 
 Final base checks:
 
@@ -359,15 +359,9 @@ less "$INSTALLER"
 sudo bash "$INSTALLER"
 ```
 
-Do not execute a failed/empty download. The entry script clones the public repository into a private root-owned directory and prints the exact revision. Review its `workstation/arch/bootstrap`, `site.yml` and managed files from another console, then type `REVIEWED`. Tracking `main` is convenient but mutable; compare/record the revision and later prefer a reviewed pinned release. A trusted first-stage file alone does not authenticate all subsequently fetched code.
+Do not execute a failed/empty download. The entry script clones the public repository into a private root-owned directory and prints the exact revision. The whiptail bootstrap then opens. Review `workstation/arch/bootstrap`, `site.yml` and managed files in advance when inspecting the repository. Tracking `main` is convenient but mutable; compare/record the revision and later prefer a reviewed pinned release. A trusted first-stage file alone does not authenticate all subsequently fetched code.
 
-The bootstrap asks:
-
-1. Daily username, default `ryan`.
-2. Whether to create a dedicated `codex` account.
-3. Whether to create a dedicated `amp` account.
-4. Confirmation of the displayed plan with `APPLY`.
-5. The daily account password through standard `passwd` prompts (hidden, twice). Existing usable passwords are preserved unless you choose to change them.
+The bootstrap uses whiptail for the daily username (default `ryan`), a checklist of Codex/Amp accounts, and one setup confirmation. The daily password uses standard `passwd` prompts (hidden, twice). Existing usable passwords are preserved unless you choose to change them.
 
 Passwords are not passed to Ansible or stored in variables, arguments or configuration. Agents have locked passwords and no sudo, not shared copies of the daily/admin password. Declining an optional agent does not delete an account created on an earlier run.
 
@@ -416,7 +410,7 @@ No SSH listener, Tailscale enrollment, login linger, automatic tmux startup, Cod
 
 These are follow-up setup gates, not features the initial script silently claims to have completed:
 
-- **Secure Boot:** UKIs exist but are initially unsigned. Install/review sbctl, export current enrolled keys, create protected owner keys, then inspect the actual firmware trust configuration. Enroll with the necessary Microsoft/OEM trust only after Windows recovery and firmware recovery are verified. Sign the Linux boot manager, fallback EFI loader and both UKIs; integrate signing into updates and test rejection of unsigned media. Do not run automatic key-enrollment or force/YOLO options. Exact firmware enrollment cannot be supplied safely without checking this T480s's current keys/settings.
+- **Secure Boot:** UKIs exist but are initially unsigned. Install/review sbctl, export current enrolled keys, create protected owner keys, then inspect the actual firmware trust configuration. Enroll with the necessary Microsoft/OEM trust only after firmware trust and recovery are verified. Sign the Linux boot manager, fallback EFI loader and both UKIs; integrate signing into updates and test rejection of unsigned media. Do not run automatic key-enrollment or force/YOLO options. Exact firmware enrollment cannot be supplied safely without checking this T480s's current keys/settings.
 - **Backups:** configure Restic only once the private Debian destination and independent second copy are selected; authenticate with dedicated credentials, run the first backup, restore test data, then enable a timer. Do not declare the workstation protected until restoration works.
 - **Recovery:** save an encrypted offline LUKS header backup and keys; retain recovery USB. Create root snapshots together with matching boot-image copies before future upgrades. The initial bootstrap installs Restic/Btrfs tooling but does not invent a backup server or claim automatic matched rollback.
 - **Kanata:** remapping depends on the actual keyboard and desired layout. Inspect `/dev/input/by-id` and review package provenance before installation; use a dedicated service identity and selected input nodes/uinput. Do not add `ryan` to `input` or grant all agents keyboard access. Stock keyboard works until this is configured.
@@ -440,7 +434,7 @@ mkinitcpio -P
 bootctl --esp-path=/efi list
 ```
 
-Do not format again to fix a boot failure. For a complete root rollback use the matched root/UKI procedure in the main specification; do not restore a root snapshot while leaving mismatched new boot images/modules. Reconnect Windows, if disconnected, only through the service procedure; test its independent firmware boot and recovery state without mounting its partitions in Arch.
+Do not format again to fix a boot failure. For a complete root rollback use the matched root/UKI procedure in the main specification; do not restore a root snapshot while leaving mismatched new boot images/modules.
 
 ## Sources and limits
 

@@ -12,8 +12,4 @@ checkout=$(mktemp -d /root/porthpean-install.XXXXXXXX)
 git clone --depth 1 --branch main -- "$repo" "$checkout/repo"
 revision=$(git -C "$checkout/repo" rev-parse HEAD)
 printf 'Source: %s\nRevision: %s\nLocal review copy: %s/repo\n' "$repo" "$revision" "$checkout"
-echo 'Review workstation/arch/bootstrap, site.yml and files before executing.'
-echo 'This tracks mutable main, not a signed release. Record/independently verify the revision.'
-read -r -p 'Type REVIEWED after reviewing the local checkout (another console is available): ' answer
-[[ $answer == REVIEWED ]] || exit 1
 exec bash "$checkout/repo/workstation/arch/bootstrap"

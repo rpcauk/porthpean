@@ -15,9 +15,9 @@ less "$INSTALLER"
 sudo bash "$INSTALLER"
 ```
 
-Review the downloaded repository/revision too before accepting `REVIEWED`. No `curl | sudo bash`; `main` is mutable, not a signed release.
+Review the installer and repository in advance; the entry script prints the checkout revision. No `curl | sudo bash`; `main` is mutable, not a signed release.
 
-The bootstrap prompts for a daily username (default `ryan`), a hidden daily-account password, and whether to create separate locked-password `codex` and `amp` accounts. The daily and agent accounts have no sudo. Vendor CLI installation and authentication remain separate interactive steps.
+Whiptail dialogs ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Standard hidden `passwd` prompts set the daily-account password. The daily and agent accounts have no sudo. Vendor CLI installation and authentication remain separate interactive steps.
 
 ## Scope
 
@@ -26,7 +26,7 @@ The bootstrap prompts for a daily username (default `ryan`), a hidden daily-acco
 - Personal profile: GB keyboard defaults for `t480s`; chosen hostname and disk design in the manual guide.
 - Local only: disk identity, passwords, provider credentials, backup destination/keys and signing keys. Never commit these.
 
-Do not build a distro-independent installer or plugin system before there is another actual machine/use case. Profiles hold defaults; they are not secrets or permission grants. The post-boot desktop bootstrap never chooses or formats a disk. The separate live-USB installer always performs a fresh installation after disk/serial confirmation.
+Do not build a distro-independent installer or plugin system before there is another actual machine/use case. Profiles hold defaults; they are not secrets or permission grants. The post-boot desktop bootstrap never chooses or formats a disk. The separate live-USB installer always performs a fresh installation after the selected-disk erase confirmation.
 
 [Bootstrap details and remaining setup](workstation/arch/README.md).
 

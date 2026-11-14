@@ -75,10 +75,41 @@ class DiskGuards(unittest.TestCase):
         }; unused_disk /dev/fake''')
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_exact_confirmation_required(self):
-        result = shell('confirm "ERASE expected-serial" <<< "ERASE other-serial"')
+    def test_cancelled_erase_dialog_stops_confirmation(self):
+        result = shell('''lsblk() { echo '1T Test SSD'; }
+        whiptail() { return 1; }
+        confirm_erase /dev/fake''')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Confirmation did not match', result.stderr)
+
+    def test_erase_dialog_defaults_to_cancel_and_names_target(self):
+        result = shell('''lsblk() { echo '1T Test SSD'; }
+        whiptail() { printf '%s\\n' "$@"; }
+        confirm_erase /dev/fake''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--defaultno', result.stdout)
+        self.assertIn('/dev/fake', result.stdout)
+        self.assertIn('All partitions and data', result.stdout)
+
+    def test_disk_menu_filters_partitions_and_unusable_disks(self):
+        result = shell('''lsblk() {
+          case "$*" in
+            *PATH,TYPE,RO,RM*) printf '/dev/sda disk 0 0\\n/dev/sda1 part 0 0\\n/dev/sdb disk 0 1\\n/dev/sdc disk 1 0\\n' ;;
+            *) echo '1T Test SSD' ;;
+          esac
+        }
+        whiptail() { printf '%s\\n' "$@" >&3; }
+        select_disk''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('/dev/sda', result.stdout)
+        for path in ['/dev/sda1', '/dev/sdb', '/dev/sdc']:
+            self.assertNotIn(path, result.stdout)
+
+    def test_input_dialog_routes_value_without_prompt_text(self):
+        result = shell('''whiptail() { printf 'chosen-host' >&3; }
+        value=$(ui_input Hostname Prompt t480s)
+        printf '%s' "$value"''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'chosen-host')
 
     def test_rejects_efi_partition_on_another_disk(self):
         result = shell('''lsblk() {

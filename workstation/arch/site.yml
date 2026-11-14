@@ -43,6 +43,7 @@
       - ripgrep
       - neovim
       - less
+      - libnewt
       - restic
       - openssh
       - nodejs
