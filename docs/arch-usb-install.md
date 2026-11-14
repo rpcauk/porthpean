@@ -31,6 +31,8 @@ If whiptail is absent from the live USB, the script installs `libnewt` into that
 
 The script fixes this profile to a 2 GiB Linux ESP, LUKS2/Btrfs subvolumes, UK English/London, two kernels, systemd-boot and unsigned UKIs ready for later signing. Hidden whiptail password boxes collect and confirm the drive passphrase and root account password. The drive secret is passed without a newline to cryptsetup through stdin, then unset after unlock; account passwords go to chpasswd through stdin. Completion offers a whiptail reboot choice, defaulting to No. It does not save passwords or set Secure Boot keys. Keep the existing Secure Boot setting disabled until the signing/enrollment follow-up is complete.
 
+While commands run, whiptail shows stage/activity updates and elapsed time. Pacman downloads and installation show real percentages, with the current package and transaction position during installation. Raw command output is captured in a mode-600 log under the private `/run/porthpean-install.*` directory; an error opens its whiptail viewer. The successful base install saves a copy at `/root/porthpean-install.log` on the target. No input is logged, including password pipes.
+
 After the console base boots, use the separate `install.sh` entry point in section 8 for the daily user/password, desktop and optional AI accounts. No need to repeat the manual commands below when their guided equivalents completed successfully.
 
 Validation is limited to shell parsing and mocked safety-guard tests; no actual disk install has been executed here. The manual steps below remain the reference for inspecting or diagnosing the generated setup.

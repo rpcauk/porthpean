@@ -50,3 +50,13 @@ ui_set_account_password() {
     whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || true
   done
 }
+
+run_progress() {
+  local stage=$1
+  shift
+  if [[ -n ${progress_helper:-} ]]; then
+    python3 "$progress_helper" --stage "$stage" --log "$install_log" -- "$@" 2>> "$install_log"
+  else
+    "$@"
+  fi
+}

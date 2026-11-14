@@ -72,7 +72,7 @@
         argv: "{{ ['pacman', '-S', '--needed', '--noconfirm'] + packages }}"
       register: package_install
       changed_when: "'there is nothing to do' not in (package_install.stdout + package_install.stderr)"
-      when: not ansible_check_mode
+      when: not ansible_check_mode and not (packages_preinstalled | default(false) | bool)
     - name: Create isolated agent accounts with locked passwords and no privileged groups
       ansible.builtin.user:
         name: '{{ item }}'

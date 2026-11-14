@@ -31,3 +31,5 @@ Do not build a distro-independent installer or plugin system before there is ano
 [Bootstrap details and remaining setup](workstation/arch/README.md).
 
 Validation: shell/Ansible syntax, local rendering and mocked installer safety-guard tests only. A hardware install has not been run. Secure Boot enrollment, Restic destination/restore testing and Kanata configuration require machine-specific follow-up.
+
+During setup, whiptail shows the current stage and elapsed time. Package downloads/installation use real pacman percentages; installation identifies the package and transaction position. Commands run behind the dialog, with a private output log and an error-log viewer on failure. Password input is never included in that log.

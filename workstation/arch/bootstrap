@@ -11,6 +11,11 @@ source /etc/os-release
 base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 command -v whiptail >/dev/null || { echo 'Install the dialog dependency first: pacman -Syu --needed libnewt'; exit 1; }
 source "$base/ui.sh"
+progress_dir=$(mktemp -d /root/porthpean-progress.XXXXXXXX)
+install_log="$progress_dir/install.log"
+: > "$install_log"
+progress_helper="$base/progress.py"
+trap 'status=$?; if [[ $status != 0 ]]; then whiptail --title "Setup stopped - log" --scrolltext --textbox "$install_log" 22 78 >/dev/tty 2>&1 || true; fi' EXIT
 if ! daily_user=$(ui_input 'Daily account' 'Choose your daily username:' ryan); then ui_cancel; fi
 [[ ${#daily_user} -le 32 && $daily_user =~ ^[a-z][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
 [[ $daily_user != root && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
@@ -55,8 +60,12 @@ else
     fi
   fi
 fi
-pacman -Syu --needed --noconfirm ansible-core python
+run_progress 'Updating packages and installing provisioning tools' pacman -Syu --needed --noconfirm ansible-core python
+package_lines=$(python3 -c 'import sys,yaml; print("\n".join(yaml.safe_load(open(sys.argv[1]))[0]["vars"]["packages"]))' "$base/site.yml")
+mapfile -t packages <<< "$package_lines"
+[[ ${#packages[@]} -gt 0 ]] || exit 1
+run_progress 'Installing desktop packages' pacman -S --needed --noconfirm "${packages[@]}"
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
-ansible-playbook -i localhost, -c local "$base/site.yml" -e "@$base/profiles/t480s.yml" -e "$vars"
+run_progress 'Configuring the desktop and accounts' ansible-playbook -i localhost, -c local "$base/site.yml" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
 if ui_yesno 'Workstation ready' "Configuration applied. Log in as $daily_user after reboot.\n\nReboot now?"; then reboot; fi

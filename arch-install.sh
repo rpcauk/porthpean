@@ -7,7 +7,11 @@ unset drive_pass
 set -euo pipefail
 export LC_ALL=C
 umask 077
-fail() { printf 'STOP: %s\n' "$*" >&2; exit 1; }
+fail() {
+  if [[ -n ${install_log:-} ]]; then printf 'STOP: %s\n' "$*" >> "$install_log";
+  else printf 'STOP: %s\n' "$*" >&2; fi
+  exit 1
+}
 cancel() {
   unset drive_pass
   if [[ ${installation_started:-false} == true ]]; then
@@ -45,7 +49,7 @@ set_target_password() {
   export -n secret
   while true; do
     if ! secret=$(ui_password "$account account password"); then return 1; fi
-    if printf '%s:%s\n' "$account" "$secret" | arch-chroot /mnt chpasswd; then
+    if printf '%s:%s\n' "$account" "$secret" | run_progress "Setting $account password" arch-chroot /mnt chpasswd; then
       unset secret
       return 0
     fi
@@ -53,14 +57,25 @@ set_target_password() {
     whiptail --title 'Account password' --msgbox 'The password was not accepted. Try another password.' 10 72 >&2 || true
   done
 }
+
+run_progress() {
+  local stage=$1
+  shift
+  if [[ -n ${progress_helper:-} ]]; then
+    python3 "$progress_helper" --stage "$stage" --log "$install_log" -- "$@" 2>> "$install_log"
+  else
+    "$@"
+  fi
+}
+
 format_and_unlock() {
   local partition=$1 status
-  if ! printf '%s' "$drive_pass" | cryptsetup luksFormat --type luks2 --batch-mode --key-file - "$partition"; then
+  if ! printf '%s' "$drive_pass" | run_progress "Encrypting the drive" cryptsetup luksFormat --type luks2 --batch-mode --key-file - "$partition"; then
     unset drive_pass
     return 1
   fi
   while true; do
-    if printf '%s' "$drive_pass" | cryptsetup open --key-file - "$partition" cryptroot; then
+    if printf '%s' "$drive_pass" | run_progress "Unlocking the drive" cryptsetup open --key-file - "$partition" cryptroot; then
       unset drive_pass
       return 0
     else
@@ -193,16 +208,194 @@ clear_partial_install() {
   unused_disk "$disk"
 }
 
+write_progress_helper() {
+  cat > "$progress_helper" <<'PORTHPEAN_PROGRESS_PY'
+#!/usr/bin/env python3
+"""Keep noninteractive installer commands behind a whiptail gauge.
+
+The child gets a PTY for output (so pacman emits real progress), but inherits
+stdin directly. Password pipes are never echoed to the PTY or recorded.
+"""
+import argparse
+import errno
+import fcntl
+import os
+import re
+import selectors
+import signal
+import struct
+import subprocess
+import termios
+import time
+
+ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
+PACKAGE = re.compile(r'\(\s*(\d+)\s*/\s*(\d+)\)\s+(installing|upgrading|reinstalling|downgrading|removing)\s+(\S+)')
+PERCENT = re.compile(r'(\d{1,3})%')
+
+
+def clean(line):
+    return ''.join(c for c in ANSI.sub('', line) if c.isprintable() or c == '\t').strip()
+
+
+def progress(line, stage):
+    line = clean(line)
+    percent = PERCENT.search(line)
+    package = PACKAGE.search(line)
+    if package:
+        index, total, action, name = package.groups()
+        return min(int(percent[1]), 100) if percent else 0, f'{stage}\n{action.capitalize()} {name} ({index}/{total})'
+    if percent:
+        label = line.split('[', 1)[0].strip()
+        return min(int(percent[1]), 100), f'{stage}\n{label[:160]}'
+    return None, f'{stage}\n{line[:180]}' if line else stage
+
+
+def frame(percent, message):
+    # Never allow command output to terminate/inject the whiptail gauge protocol.
+    message = '\n'.join(row for row in message.splitlines() if row.strip() != 'XXX')
+    return f'XXX\n{max(0, min(percent, 100))}\n{message}\nXXX\n'.encode()
+
+
+def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_command=None):
+    owned_terminal = terminal is None
+    if terminal is None:
+        terminal = open('/dev/tty', 'wb', buffering=0)
+    gauge_command = gauge_command or ['whiptail', '--title', 'Porthpean installation', '--gauge', stage, '12', '78', '0']
+    descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.fchmod(descriptor, 0o600)
+    master, slave = os.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
+    gauge = None
+    child = None
+    started = time.monotonic()
+    percent = 0
+    message = stage
+    pending = ''
+    last_update = 0.0
+    last_frame = None
+    last_package = None
+    selector = selectors.DefaultSelector()
+
+    def emit(done=False):
+        nonlocal last_update, last_frame
+        elapsed = int(time.monotonic() - started)
+        value = 100 if done else percent
+        text = (stage + '\nComplete' if done else message) + f'\nElapsed {elapsed // 60:02d}:{elapsed % 60:02d}'
+        payload = frame(value, text)
+        if payload != last_frame:
+            try:
+                gauge.stdin.write(payload)
+                gauge.stdin.flush()
+            except (BrokenPipeError, OSError):
+                # Do not interrupt a package transaction because the display closed.
+                pass
+            last_frame = payload
+        last_update = time.monotonic()
+
+    def consume(line, log):
+        nonlocal percent, message, last_package
+        line = clean(line)
+        if not line:
+            return
+        log.write(line + '\n')
+        value, message = progress(line, stage)
+        percent = 0 if value is None else value
+        package = PACKAGE.search(line)
+        if package and package.groups() != last_package:
+            last_package = package.groups()
+            emit()
+
+    try:
+        with os.fdopen(descriptor, 'a', encoding='utf-8', buffering=1) as log:
+            log.write(f'\n=== {stage} ===\n')
+            gauge = subprocess.Popen(gauge_command, stdin=subprocess.PIPE, stdout=terminal, stderr=terminal)
+            env = dict(os.environ, LC_ALL='C', TERM='xterm', COLUMNS='100', LINES='30')
+            # argv is passed directly, never converted into shell text.
+            child = subprocess.Popen(command, stdin=stdin, stdout=slave, stderr=slave, env=env, start_new_session=True)
+            os.close(slave)
+            slave = -1
+            selector.register(master, selectors.EVENT_READ)
+            emit()
+            eof = False
+            while not eof:
+                for key, _ in selector.select(timeout=0.2):
+                    try:
+                        data = os.read(key.fd, 65536)
+                    except OSError as exc:
+                        if exc.errno != errno.EIO:
+                            raise
+                        data = b''
+                    if not data:
+                        eof = True
+                        break
+                    pending += data.decode('utf-8', errors='replace').replace('\r', '\n')
+                    while '\n' in pending:
+                        line, pending = pending.split('\n', 1)
+                        consume(line, log)
+                        if time.monotonic() - last_update >= 0.08:
+                            emit()
+                if time.monotonic() - last_update >= 0.5:
+                    emit()
+            if pending:
+                consume(pending, log)
+            status = child.wait()
+            log.write(f'=== Exit status: {status} ===\n')
+            if status == 0:
+                emit(done=True)
+            return status if status >= 0 else 128 - status
+    finally:
+        if child is not None and child.poll() is None:
+            os.killpg(child.pid, signal.SIGTERM)
+            try:
+                child.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait()
+        if gauge is not None:
+            try:
+                gauge.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            try:
+                gauge.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                gauge.terminate()
+                gauge.wait()
+        selector.close()
+        os.close(master)
+        if slave >= 0:
+            os.close(slave)
+        if owned_terminal:
+            terminal.close()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--stage', required=True)
+    parser.add_argument('--log', required=True)
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command[1:] if args.command[:1] == ['--'] else args.command
+    if not command:
+        parser.error('command required')
+    return run_command(command, args.stage, args.log)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+PORTHPEAN_PROGRESS_PY
+}
+
 main() {
-trap 'unset drive_pass' EXIT
-trap 'printf "Stopped at line %s. Inspect the error; mounted filesystems are left in place. Rerunning this installer starts over and ERASES the selected disk after confirmation.\n" "$LINENO" >&2' ERR
+trap 'status=$?; unset drive_pass; if [[ $status != 0 && -n ${install_log:-} ]] && command -v whiptail >/dev/null; then whiptail --title "Installation stopped - log" --scrolltext --textbox "$install_log" 22 78 >/dev/tty 2>&1 || true; fi' EXIT
+trap 'printf "Stopped at line %s; target filesystems left in place.\n" "$LINENO" >>"${install_log:-/dev/stderr}"' ERR
 
 # These checks run before any mutation, including prompts which could mislead on another OS.
 [[ $EUID == 0 ]] || fail 'Run as root from the Arch USB.'
 [[ -t 0 && -t 1 ]] || fail 'Download, inspect and run interactively; do not pipe into bash.'
 [[ $(uname -m) == x86_64 && -f /etc/arch-release && -d /run/archiso ]] || fail 'Requires the Arch x86_64 live USB, not an installed OS or chroot.'
 [[ -d /sys/firmware/efi/efivars ]] || fail 'Boot the USB in UEFI mode.'
-for tool in lsblk findmnt cryptsetup sfdisk udevadm mount umount blkid btrfs mkfs.fat mkfs.btrfs pacstrap genfstab arch-chroot curl flock; do
+for tool in lsblk findmnt cryptsetup sfdisk udevadm mount umount blkid btrfs mkfs.fat mkfs.btrfs pacstrap genfstab arch-chroot curl flock python3; do
   command -v "$tool" >/dev/null || fail "Missing live-media tool: $tool"
 done
 exec 9>/run/porthpean-arch-install.lock
@@ -214,15 +407,20 @@ if ! curl --fail --silent --show-error --head --connect-timeout 15 https://archl
   echo 'Connect Ethernet or use iwctl in another console, then rerun. No disk changes have been made.'
   exit 1
 fi
+progress_dir=$(mktemp -d /run/porthpean-install.XXXXXXXX)
+install_log="$progress_dir/install.log"
+: > "$install_log"
+progress_helper="$progress_dir/progress.py"
+write_progress_helper
 # Install only the dialog dependency into the disposable live USB if needed.
 if ! command -v whiptail >/dev/null; then
-  pacman -Sy --needed --noconfirm libnewt
+  pacman -Sy --needed --noconfirm libnewt >> "$install_log" 2>&1
 fi
 if ! host=$(ui_input 'Hostname' 'Name this computer:' t480s); then cancel; fi
 [[ ${#host} -le 63 && $host =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || fail 'Use a hostname of 1–63 lowercase letters/digits/hyphens, without leading/trailing hyphen.'
 if ! disk_id=$(select_disk); then cancel; fi
 disk=$(whole_disk "$disk_id")
-plan_partial_cleanup "$disk"
+plan_partial_cleanup "$disk" >> "$install_log" 2>&1
 serial=$(lsblk -dnro SERIAL "$disk")
 serial=${serial## }; serial=${serial%% }
 [[ -n $serial ]] || fail 'No hardware serial reported. Resolve disk identity manually.'
@@ -232,8 +430,8 @@ if ! confirm_erase "$disk"; then cancel; fi
 installation_started=true
 # Recheck immediately before the first destructive operation.
 [[ $(readlink -f -- "$disk_id") == "$disk" && $(lsblk -dnro SERIAL "$disk") == "$serial" ]] || fail 'Disk identity changed.'
-clear_partial_install "$disk"
-sfdisk --lock --wipe always --wipe-partitions always "$disk" <<'LAYOUT'
+clear_partial_install "$disk" >> "$install_log" 2>&1
+run_progress "Creating disk partitions" sfdisk --lock --wipe always --wipe-partitions always "$disk" <<'LAYOUT'
 label: gpt
 size=2GiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="ARCH_EFI"
 type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="ARCH_LUKS"
@@ -242,20 +440,20 @@ udevadm settle
 esp=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 1 {print $1}')
 crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
 [[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
-mkfs.fat -F 32 -n ARCH_EFI "$esp"
+run_progress "Creating EFI filesystem" mkfs.fat -F 32 -n ARCH_EFI "$esp"
 format_and_unlock "$crypt"
-mkfs.btrfs -L archroot /dev/mapper/cryptroot
-mount /dev/mapper/cryptroot /mnt
-for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub"; done
-umount /mnt
-mount -o subvol=@,compress=zstd:3 /dev/mapper/cryptroot /mnt
+run_progress "Creating encrypted Btrfs filesystem" mkfs.btrfs -L archroot /dev/mapper/cryptroot
+mount /dev/mapper/cryptroot /mnt 2>> "$install_log"
+for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub" >> "$install_log" 2>&1; done
+umount /mnt 2>> "$install_log"
+mount -o subvol=@,compress=zstd:3 /dev/mapper/cryptroot /mnt 2>> "$install_log"
 for pair in '@home:home' '@snapshots:.snapshots' '@log:var/log' '@pkg:var/cache/pacman/pkg' '@tmp:var/tmp' '@state:srv/workstation-state'; do
   sub=${pair%%:*}; path=${pair#*:}
   mkdir -p "/mnt/$path"
-  mount -o "subvol=$sub,compress=zstd:3" /dev/mapper/cryptroot "/mnt/$path"
+  mount -o "subvol=$sub,compress=zstd:3" /dev/mapper/cryptroot "/mnt/$path" 2>> "$install_log"
 done
 mkdir -p /mnt/efi
-mount -o umask=0077 "$esp" /mnt/efi
+mount -o umask=0077 "$esp" /mnt/efi 2>> "$install_log"
 
 # Verify the new layout before installing packages or boot files.
 mountpoint -q /mnt || fail '/mnt did not mount successfully.'
@@ -287,19 +485,15 @@ while IFS= read -r target; do
   esac
   [[ ,$(findmnt -nr -M "$target" -o OPTIONS), == *,rw,* ]] || fail "Read-only target mount $target"
 done <<< "$targets"
-findmnt -R /mnt
-lsblk -o PATH,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINTS "/dev/$parent"
-printf 'Install/configure base at /mnt; hostname %s; the root password will be requested.\n' "$host"
-echo 'Fresh layout created. Installing the base; keep AC power and internet connected.'
-pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
+run_progress "Installing the Arch base" pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager git curl \
-  neovim less libnewt man-db man-pages mkinitcpio efibootmgr systemd-ukify
+  neovim less libnewt python man-db man-pages mkinitcpio efibootmgr systemd-ukify
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
 genfstab -U /mnt > /mnt/etc/fstab
 chmod 0644 /mnt/etc/fstab
 luks_uuid=$(blkid -s UUID -o value "$crypt")
 [[ $luks_uuid =~ ^[0-9a-fA-F-]{36}$ ]] || fail 'Missing/invalid LUKS UUID.'
-arch-chroot /mnt /bin/bash -s -- "$host" "$luks_uuid" <<'CHROOT'
+run_progress "Configuring the system and generating boot images" arch-chroot /mnt /bin/bash -s -- "$host" "$luks_uuid" <<'CHROOT'
 set -euo pipefail
 umask 022
 host=$1
@@ -346,10 +540,11 @@ systemctl is-enabled NetworkManager
 CHROOT
 if ! set_target_password root; then cancel; fi
 printf 'Completed %s\n' "$(date -Iseconds)" > /mnt/root/porthpean-base-complete
+cp "$install_log" /mnt/root/porthpean-install.log
 installation_started=false
 if whiptail --title 'Base installation complete' --defaultno --yesno 'Base installed. After reboot, log in as root and run the workstation bootstrap.\n\nReboot now? Remove the USB when the computer restarts.' 12 76; then
   cd /
-  umount -R /mnt
+  umount -R /mnt 2>> "$install_log"
   cryptsetup close cryptroot
   reboot
 fi

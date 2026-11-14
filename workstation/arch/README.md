@@ -21,3 +21,5 @@ Ansible manages files/services with backups. Agent passwords are locked and supp
 Remaining machine-specific work: Secure Boot trust/signing automation, verified Restic destination/credentials/retention, Kanata keymap/device restrictions, remote access if wanted. This bootstrap does not claim those are completed.
 
 Validation performed on the Mac: shell parsing, Ansible syntax and local configuration rendering. No target-machine execution has been done.
+
+During setup, whiptail shows the current stage and elapsed time. Package downloads/installation use real pacman percentages; installation identifies the package and transaction position. Commands run behind the dialog, with a private output log and an error-log viewer on failure. Password input is never included in that log.
