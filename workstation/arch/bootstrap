@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo 'Run from admin with sudo, after reviewing this directory.' >&2; exit 1; }
+source /etc/os-release
+[[ $ID == arch && $(uname -m) == x86_64 ]] || { echo 'Arch x86_64 only'; exit 1; }
+[[ $# == 0 ]] || { echo 'Usage: bash bootstrap (interactive)'; exit 1; }
+[[ -t 0 && -t 1 ]] || { echo 'Run interactively, not piped from curl.'; exit 1; }
+getent passwd admin >/dev/null || { echo 'Create admin using the base installation guide first.'; exit 1; }
+base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+read -r -p 'Daily username [ryan]: ' daily_user
+daily_user=${daily_user:-ryan}
+[[ ${#daily_user} -le 32 && $daily_user =~ ^[a-z][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
+[[ $daily_user != root && $daily_user != admin && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
+existing=false
+if getent passwd "$daily_user" >/dev/null; then
+  existing=true
+  [[ $(id -u "$daily_user") -ge 1000 && $(getent passwd "$daily_user" | cut -d: -f6) == "/home/$daily_user" ]] || { echo 'Refusing to manage a system account or unexpected home'; exit 1; }
+  for group in $(id -nG "$daily_user"); do
+    case "$group" in wheel|disk|docker|input) echo "Remove privileged group $group deliberately before continuing"; exit 1 ;; esac
+  done
+  echo "Existing account $daily_user: home permissions and managed desktop files will be updated, with file backups."
+fi
+agents=()
+for agent in codex amp; do
+  read -r -p "Set up dedicated $agent account? [Y/n]: " answer
+  case "$answer" in
+    ''|y|Y|yes|YES) agents+=("$agent") ;;
+    n|N|no|NO) ;;
+    *) echo 'Answer yes or no; rerun to correct.'; exit 1 ;;
+  esac
+done
+for agent in "${agents[@]}"; do
+  if getent passwd "$agent" >/dev/null; then
+    [[ $(id -u "$agent") -ge 1000 && $(getent passwd "$agent" | cut -d: -f6) == "/home/$agent" ]] || { echo "Unexpected existing account $agent"; exit 1; }
+    echo "Existing $agent account: will enforce locked password and no supplementary groups."
+  fi
+done
+printf 'Target: this host (%s), daily user %s, profile t480s (GB keyboard).\n' "$(hostname)" "$daily_user"
+printf 'Agent accounts selected: %s\n' "${agents[*]:-(none)}"
+echo 'System packages, managed desktop files, home permissions, firewall and login configuration will change.'
+echo 'No disk, firmware or remote-service operations. A complete official package upgrade runs first.'
+echo 'Existing agent accounts not selected are left untouched, not deleted.'
+read -r -p 'Type APPLY to continue: ' answer
+[[ $answer == APPLY ]] || exit 1
+# Never read passwords into variables, command arguments or Ansible data.
+# A newly created daily account remains locked if passwd or provisioning fails.
+if [[ $existing == false ]]; then
+  useradd -m -U -s /bin/bash "$daily_user"
+  chmod 700 "/home/$daily_user"
+  passwd "$daily_user"
+else
+  status=$(passwd -S "$daily_user" | awk '{print $2}')
+  if [[ $status != P ]]; then
+    echo 'A usable daily-account password must be set.'
+    passwd "$daily_user"
+  else
+    read -r -p 'Change existing daily-account password? [y/N]: ' answer
+    case "$answer" in y|Y|yes|YES) passwd "$daily_user" ;; esac
+  fi
+fi
+pacman -Syu --needed ansible-core python
+# Only names/options are passed; no passwords, hashes or vendor credentials.
+vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
+ansible-playbook -i localhost, -c local "$base/site.yml" -e "@$base/profiles/t480s.yml" -e "$vars"
+echo 'Configuration applied. Reboot deliberately, then log in as the daily user.'
+echo 'Vendor agent installation/login remains a separate unprivileged interactive step.'

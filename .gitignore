@@ -1,0 +1,13 @@
+.DS_Store
+.direnv/
+.venv/
+node_modules/
+dist/
+build/
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+/porthpean
+/workstation/arch-bootstrap.tar.gz
+/workstation/arch-bootstrap.sha256

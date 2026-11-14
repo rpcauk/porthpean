@@ -1,0 +1,28 @@
+input {
+    keyboard { xkb { layout "{{ xkb_layout }}"; }; };
+    touchpad { tap; natural-scroll; };
+}
+spawn-at-startup "waybar"
+spawn-at-startup "mako"
+spawn-at-startup "swayidle" "-w" "timeout" "300" "swaylock -f" "before-sleep" "swaylock -f"
+binds {
+    Mod+Return { spawn "foot"; }
+    Mod+D { spawn "fuzzel"; }
+    Mod+L { spawn "swaylock" "-f"; }
+    Mod+Q { close-window; }
+    Mod+H { focus-column-left; }
+    Mod+J { focus-window-down; }
+    Mod+K { focus-window-up; }
+    Mod+Semicolon { focus-column-right; }
+    Mod+Shift+H { move-column-left; }
+    Mod+Shift+Semicolon { move-column-right; }
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+Shift+E { quit; }
+    XF86AudioRaiseVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"; }
+    XF86AudioLowerVolume { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"; }
+    XF86AudioMute { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    XF86MonBrightnessUp { spawn "brightnessctl" "set" "+5%"; }
+    XF86MonBrightnessDown { spawn "brightnessctl" "set" "5%-"; }
+}

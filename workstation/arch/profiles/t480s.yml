@@ -1,0 +1,4 @@
+---
+# Public, non-secret defaults for Ryan's current workstation.
+# Account names are confirmed by bootstrap; disk identity is never a default.
+xkb_layout: gb

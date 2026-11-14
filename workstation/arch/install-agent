@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+who=$(id -un)
+[[ $EUID != 0 ]] || { echo 'Never run vendor installers as root.'; exit 1; }
+case "$who" in
+  codex) url=https://chatgpt.com/codex/install.sh; interpreter=sh ;;
+  amp) url=https://ampcode.com/install.sh; interpreter=bash ;;
+  *) echo 'Run inside the codex or amp login shell.'; exit 1 ;;
+esac
+umask 077
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+curl --fail --show-error --location --proto '=https' --tlsv1.2 "$url" -o "$scratch/install.sh"
+sha256sum "$scratch/install.sh"
+less "$scratch/install.sh"
+echo "Installer from $url runs as $who and can access this account's files/network. It may fetch additional code."
+read -r -p 'Type INSTALL after review: ' answer
+[[ $answer == INSTALL ]] || exit 1
+"$interpreter" "$scratch/install.sh"
+echo 'Open a fresh login shell; check PATH and CLI version. Authenticate interactively; do not copy another account’s auth files.'

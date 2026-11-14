@@ -1,0 +1,6 @@
+{
+  "layer": "top",
+  "modules-left": ["niri/workspaces"],
+  "modules-right": ["network", "pulseaudio", "battery", "clock"],
+  "clock": {"format": "{:%a %d %b %H:%M}"}
+}

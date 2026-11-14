@@ -1,0 +1,182 @@
+---
+- name: Configure Arch workstation after manual base install
+  hosts: all
+  become: false
+  vars:
+    agent_users: []
+    xkb_layout: us
+    packages:
+      - niri
+      - waybar
+      - fuzzel
+      - foot
+      - mako
+      - pipewire
+      - pipewire-audio
+      - pipewire-alsa
+      - pipewire-pulse
+      - wireplumber
+      - greetd
+      - greetd-tuigreet
+      - xdg-desktop-portal-gnome
+      - xdg-desktop-portal-gtk
+      - xwayland-satellite
+      - swaylock
+      - swayidle
+      - wl-clipboard
+      - brightnessctl
+      - polkit
+      - gnome-keyring
+      - firefox
+      - mpv
+      - zathura
+      - zathura-pdf-mupdf
+      - thunar
+      - keepassxc
+      - noto-fonts
+      - noto-fonts-emoji
+      - ttf-dejavu
+      - git
+      - tmux
+      - curl
+      - jq
+      - ripgrep
+      - neovim
+      - less
+      - restic
+      - openssh
+      - nodejs
+      - npm
+      - nftables
+      - zram-generator
+      - pacman-contrib
+      - btrfs-progs
+  tasks:
+    - name: Validate platform and requested identity
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Archlinux'
+          - daily_user is match('^[a-z][a-z0-9_-]*$')
+          - daily_user not in ['root', 'admin', 'codex', 'amp']
+          - agent_users is sequence
+          - agent_users is not string
+          - agent_users | difference(['codex', 'amp']) | length == 0
+          - xkb_layout is match('^[a-z]{2}$')
+    - name: Read local daily user record
+      ansible.builtin.getent:
+        database: passwd
+        key: '{{ daily_user }}'
+    - name: Install official packages (bootstrap already performed complete upgrade)
+      ansible.builtin.command:
+        argv: "{{ ['pacman', '-S', '--needed', '--noconfirm'] + packages }}"
+      register: package_install
+      changed_when: "'there is nothing to do' not in (package_install.stdout + package_install.stderr)"
+      when: not ansible_check_mode
+    - name: Create isolated agent accounts with locked passwords and no privileged groups
+      ansible.builtin.user:
+        name: '{{ item }}'
+        shell: /bin/bash
+        create_home: true
+        groups: ''
+        append: false
+        password_lock: true
+      loop: '{{ agent_users }}'
+    - name: Protect personal and agent homes
+      ansible.builtin.file:
+        path: '/home/{{ item }}'
+        state: directory
+        mode: '0700'
+        owner: '{{ item }}'
+        group: '{{ item }}'
+      loop: '{{ [daily_user] + agent_users }}'
+    - name: Create private per-agent workspaces
+      ansible.builtin.file:
+        path: '/home/{{ item }}/Projects'
+        state: directory
+        owner: '{{ item }}'
+        group: '{{ item }}'
+        mode: '0700'
+      loop: '{{ agent_users }}'
+    - name: Install agent operating instructions
+      ansible.builtin.copy:
+        src: files/agent-AGENTS.md
+        dest: '/home/{{ item }}/Projects/AGENTS.md'
+        owner: '{{ item }}'
+        group: '{{ item }}'
+        mode: '0600'
+      loop: '{{ agent_users }}'
+    - name: Create user configuration directories
+      ansible.builtin.file:
+        path: '/home/{{ daily_user }}/.config/{{ item }}'
+        state: directory
+        owner: '{{ daily_user }}'
+        group: '{{ daily_user }}'
+        mode: '0700'
+      loop: [niri, waybar, mako, foot]
+    - name: Install managed desktop files (backs up existing files)
+      ansible.builtin.copy:
+        src: 'files/{{ item.src }}'
+        dest: '/home/{{ daily_user }}/.config/{{ item.dest }}'
+        owner: '{{ daily_user }}'
+        group: '{{ daily_user }}'
+        mode: '0600'
+        backup: true
+      loop:
+        - {src: waybar.jsonc, dest: waybar/config.jsonc}
+        - {src: mako.conf, dest: mako/config}
+        - {src: foot.ini, dest: foot/foot.ini}
+    - name: Render Niri configuration from the selected keyboard profile
+      ansible.builtin.template:
+        src: files/config.kdl.j2
+        dest: '/home/{{ daily_user }}/.config/niri/config.kdl'
+        owner: '{{ daily_user }}'
+        group: '{{ daily_user }}'
+        mode: '0600'
+        backup: true
+    - name: Record non-secret installation choices for checks
+      ansible.builtin.copy:
+        dest: /etc/porthpean-workstation.json
+        mode: '0600'
+        content: '{{ {"daily_user": daily_user, "agent_users": agent_users, "xkb_layout": xkb_layout} | to_nice_json }}'
+    - name: Validate installed Niri configuration without starting desktop
+      ansible.builtin.command:
+        argv: [niri, validate, -c, '/home/{{ daily_user }}/.config/niri/config.kdl']
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Install greetd configuration without autologin
+      ansible.builtin.copy:
+        dest: /etc/greetd/config.toml
+        mode: '0644'
+        backup: true
+        content: |
+          [terminal]
+          vt = 1
+          [default_session]
+          command = "tuigreet --time --cmd niri-session"
+          user = "greeter"
+    - name: Configure compressed RAM swap, no hibernation
+      ansible.builtin.copy:
+        dest: /etc/systemd/zram-generator.conf
+        mode: '0644'
+        content: |
+          [zram0]
+          zram-size = min(ram / 2, 4096)
+          compression-algorithm = zstd
+    - name: Install standalone workstation firewall policy
+      ansible.builtin.copy:
+        src: files/nftables.conf
+        dest: /etc/nftables.conf
+        mode: '0600'
+        backup: true
+    - name: Validate firewall before activation on next reboot
+      ansible.builtin.command: nft --check --file /etc/nftables.conf
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Enable local desktop and firewall for next boot, no session restart
+      ansible.builtin.systemd_service:
+        name: '{{ item }}'
+        enabled: true
+      loop: [greetd.service, nftables.service]
+    - name: State remaining interactive gates
+      ansible.builtin.debug:
+        msg: 'Reboot deliberately after reviewing results. Agent installers/authentication, Kanata remapping, backup destination and Secure Boot enrollment are separate documented steps. No SSH listener or unattended agent enabled.'

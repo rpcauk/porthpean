@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source /etc/os-release
+[[ $ID == arch ]] || { echo 'Arch only'; exit 1; }
+[[ $EUID == 0 ]] || { echo 'Run as admin via sudo for complete checks'; exit 1; }
+failed=0
+config=/etc/porthpean-workstation.json
+[[ -r $config ]] || { echo 'Missing completed bootstrap configuration'; exit 1; }
+daily_user=$(jq -er '.daily_user' "$config")
+mapfile -t agent_users < <(jq -r '.agent_users[]' "$config")
+for account in "$daily_user" admin "${agent_users[@]}"; do
+  id "$account" || failed=1
+  stat -c '%a %U %n' "/home/$account" || failed=1
+done
+for account in "$daily_user" "${agent_users[@]}"; do
+  groups=$(id -nG "$account")
+  if [[ " $groups " =~ \ (wheel|disk|docker|input)\  ]]; then
+    echo "FAIL: $account has a privileged group"; failed=1
+  fi
+done
+for target in / /efi /home; do
+  findmnt --mountpoint "$target" || failed=1
+done
+for file in /efi/EFI/Linux/arch-lts.efi /efi/EFI/Linux/arch-linux.efi; do
+  [[ -s $file ]] || { echo "FAIL: missing $file"; failed=1; }
+done
+systemctl is-enabled NetworkManager greetd nftables || failed=1
+systemctl --failed --no-pager
+nft --check --file /etc/nftables.conf || failed=1
+niri validate -c "/home/$daily_user/.config/niri/config.kdl" || failed=1
+printf '%s\n' 'Review failed units above, sudo/polkit permissions, live firewall and desktop tests separately.'
+exit "$failed"
