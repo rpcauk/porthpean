@@ -12,6 +12,22 @@ def shell(body):
 
 
 class DiskGuards(unittest.TestCase):
+    def test_package_installation_uses_service_accessible_umask(self):
+        # Reproduce the inherited-mask failure without installing any packages.
+        script = SCRIPT.read_text()
+        start = script.index('umask 022', script.index('format_and_unlock "$crypt"'))
+        packages = script.index('run_progress "Installing the Arch base"', start)
+        reset = script.index('umask 077', packages)
+        self.assertNotIn('umask 077', script[start:packages])
+        self.assertLess(packages, reset)
+        self.assertIn('stat -c %a /mnt/etc', script[reset:])
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            result = subprocess.run(['bash', '-c', 'umask 077; umask 022; mkdir "$1/etc"', 'test', root], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((pathlib.Path(root) / 'etc').stat().st_mode & 0o777, 0o755)
+
+
     def test_sourcing_runs_no_installation(self):
         result = shell('echo definitions-only')
         self.assertEqual(result.returncode, 0, result.stderr)

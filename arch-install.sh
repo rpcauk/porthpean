@@ -500,6 +500,9 @@ crypt=$(lsblk -nrpo PATH,PARTN "$disk" | awk '$2 == 2 {print $1}')
 [[ -b $esp && -b $crypt ]] || fail 'Could not identify the two new partitions.'
 run_progress "Creating EFI filesystem" mkfs.fat -F 32 -n ARCH_EFI "$esp"
 format_and_unlock "$crypt"
+# System directories and package hooks need normal traversal permissions.
+# The private progress directory/log already exist with restrictive permissions.
+umask 022
 run_progress "Creating encrypted Btrfs filesystem" mkfs.btrfs -L archroot /dev/mapper/cryptroot
 mount /dev/mapper/cryptroot /mnt 2>> "$install_log"
 for sub in @ @home @snapshots @log @pkg @tmp @state; do btrfs subvolume create "/mnt/$sub" >> "$install_log" 2>&1; done
@@ -510,6 +513,10 @@ for pair in '@home:home' '@snapshots:.snapshots' '@log:var/log' '@pkg:var/cache/
   mkdir -p "/mnt/$path"
   mount -o "subvol=$sub,compress=zstd:3" /dev/mapper/cryptroot "/mnt/$path" 2>> "$install_log"
 done
+# Btrfs subvolume defaults are not a substitute for explicit directory modes.
+chmod 0755 /mnt /mnt/home /mnt/var /mnt/var/log /mnt/var/cache /mnt/var/cache/pacman /mnt/var/cache/pacman/pkg /mnt/srv
+chmod 1777 /mnt/var/tmp
+chmod 0700 /mnt/.snapshots /mnt/srv/workstation-state
 mkdir -p /mnt/efi
 mount -o umask=0077 "$esp" /mnt/efi 2>> "$install_log"
 
@@ -546,6 +553,9 @@ done <<< "$targets"
 run_progress "Installing the Arch base" pacstrap -K /mnt base linux-lts linux linux-firmware intel-ucode \
   btrfs-progs cryptsetup dosfstools networkmanager git curl \
   neovim less libnewt python man-db man-pages mkinitcpio efibootmgr systemd-ukify refind
+umask 077
+# Verify the installed configuration directory is traversable by services.
+[[ $(stat -c %a /mnt/etc) == 755 ]] || fail 'Expected /etc permissions 755 after base installation.'
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
 genfstab -U /mnt > /mnt/etc/fstab
 chmod 0644 /mnt/etc/fstab
