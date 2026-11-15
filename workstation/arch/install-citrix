@@ -34,11 +34,8 @@ if [[ $(pacman -Q icaclient 2>/dev/null || true) != "icaclient $version" ]]; the
     install -m 0600 -o "$daily" -g "$(id -gn "$daily")" "$archive" "$build/source/icaclient-x64-26.04.10.1.tar.gz"
     aur_as_user python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD" --local
   fi
-  # Let yay regenerate metadata for the patched recipe and install it through sudo pacman.
-  aur_as_user rm -f "$build/source/.SRCINFO"
-  aur_enable_install
-  run_progress 'Installing Citrix Workspace with yay' bash "$base/aur-user" "$daily" "$build/source" \
-    /usr/bin/yay -Bi --noconfirm --sudo /usr/bin/sudo --sudoflags=-n --sudoloop=false "$build/source"
+  # Preserve the reviewed checkout and patched recipe: yay -B resets/merges it.
+  run_progress 'Building and installing Citrix Workspace' aur_install_local "$build/source"
   [[ $(pacman -Q icaclient) == "icaclient $version" ]] || exit 1
 fi
 # Vendor services are not enabled, and security/USB/app-protection components aren't added.

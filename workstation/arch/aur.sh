@@ -39,6 +39,21 @@ aur_enable_install() {
 aur_yay() {
   aur_as_user /usr/bin/yay --sudo /usr/bin/sudo --sudoflags=-n --sudoloop=false "$@"
 }
+# yay -B resets/merges local Git worktrees, including reviewed recipe edits.
+# Build the exact local recipe with makepkg, then let yay install the artifacts.
+aur_install_local() {
+  local directory=$1 package_lines package
+  local -a packages=()
+  aur_as_user bash -c 'cd -- "$1"; exec makepkg --cleanbuild --noconfirm' build "$directory" || return
+  package_lines=$(aur_as_user bash -c 'cd -- "$1"; exec makepkg --packagelist' list "$directory") || return
+  [[ -n $package_lines ]] || { echo 'makepkg returned no package paths.' >&2; return 1; }
+  while IFS= read -r package; do packages+=("$package"); done <<< "$package_lines"
+  for package in "${packages[@]}"; do
+    [[ -f $package && $package == /* ]] || { echo "Missing built package: $package" >&2; return 1; }
+  done
+  aur_enable_install || return
+  aur_yay -U --needed --noconfirm "${packages[@]}"
+}
 aur_cleanup() {
   rm -f -- "$aur_sudo_file"
 }

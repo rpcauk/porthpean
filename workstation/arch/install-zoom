@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Called by bootstrap inside its existing progress dialog.
+# Called by bootstrap with terminal output and a private log.
 set -euo pipefail
 umask 022
 base=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -13,8 +13,7 @@ if [[ $(pacman -Q zoom-citrix-plugin-ms 2>/dev/null || true) != "zoom-citrix-plu
   bash "$base/install-packages" base-devel alsa-lib gtk3 libglvnd libpulse libx11 libxcb libxcomposite libxv libxkbcommon-x11 xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm krb5 gcc-libs
   build=$(aur_new_build zoom)
   install -m 0644 -o "$daily" -g "$(id -gn "$daily")" "$base/files/zoom/PKGBUILD" "$build/PKGBUILD"
-  aur_enable_install
-  aur_yay -Bi --noconfirm "$build"
+  aur_install_local "$build"
   [[ $(pacman -Q zoom-citrix-plugin-ms) == "zoom-citrix-plugin-ms $version" ]] || exit 1
 fi
 # Always repair integration: upgrading Citrix can replace its module.ini.

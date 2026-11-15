@@ -27,7 +27,7 @@ class TerminalUI(unittest.TestCase):
         self.assertNotIn('--sudobin', (BASE / 'install-citrix').read_text())
 
     def test_installers_do_not_use_removed_yay_options(self):
-        for name in ('aur.sh', 'install-citrix'):
+        for name in ('aur.sh',):
             text = (BASE / name).read_text()
             self.assertNotIn('--nosudoloop', text)
             self.assertNotIn('--sudobin', text)
