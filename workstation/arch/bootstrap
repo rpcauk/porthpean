@@ -69,17 +69,18 @@ fi
 repair_system_permissions /
 runuser -u alpm -- test -x /var/cache/pacman/pkg
 run_progress 'Upgrading the installed system' pacman -Syu --noconfirm
-for tool in python ansible-core; do
-  run_progress "Installing setup tool: $tool" pacman -S --needed --noconfirm "$tool"
-done
+# An upgraded kernel cannot load modules removed with its old package version.
+if [[ ! -s /usr/lib/modules/$(uname -r)/modules.dep ]]; then
+  if ui_yesno 'Reboot required after kernel upgrade' 'The running kernel no longer has matching modules. Reboot, log in as root and rerun /root/install.sh to continue setup. Reboot now?'; then reboot; fi
+  exit 0
+fi
+run_progress 'Installing setup tools' bash "$base/install-packages" python ansible-core
 package_lines=$(python3 -c 'import sys,yaml; print("\n".join(yaml.safe_load(open(sys.argv[1]))[0]["vars"]["packages"]))' "$base/site.yml")
 mapfile -t packages <<< "$package_lines"
 [[ ${#packages[@]} -gt 0 ]] || exit 1
-index=0
-for package in "${packages[@]}"; do
-  ((index+=1))
-  run_progress "Desktop package $index/${#packages[@]}: $package" pacman -S --needed --noconfirm "$package"
-done
+run_progress 'Installing desktop packages' bash "$base/install-packages" "${packages[@]}"
+# Check kernel support before asking nft to validate rules; do not skip validation.
+run_progress 'Checking firewall kernel support' modprobe nf_tables
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
 for stage in accounts desktop services validate activate finalize; do

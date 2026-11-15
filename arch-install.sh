@@ -269,6 +269,7 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
     started = time.monotonic()
     percent = 0
     message = stage
+    active_stage = stage
     pending = ''
     last_update = 0.0
     last_frame = None
@@ -292,12 +293,18 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
         last_update = time.monotonic()
 
     def consume(line, log):
-        nonlocal percent, message, last_package
+        nonlocal percent, message, last_package, active_stage
         line = clean(line)
         if not line:
             return
         log.write(line + '\n')
-        value, message = progress(line, stage)
+        marker = re.fullmatch(r'PORTHPEAN_PACKAGE (\d+/\d+) ([a-z0-9][a-z0-9@._+\-]*)', line)
+        if marker:
+            active_stage = f'{stage}\nPackage {marker[1]}: {marker[2]}'
+            percent, message = 0, active_stage
+            emit()
+            return
+        value, message = progress(line, active_stage)
         percent = 0 if value is None else value
         package = PACKAGE.search(line)
         if package and package.groups() != last_package:
@@ -308,7 +315,7 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
         with os.fdopen(descriptor, 'a', encoding='utf-8', buffering=1) as log:
             log.write(f'\n=== {stage} ===\n')
             gauge = subprocess.Popen(gauge_command, stdin=subprocess.PIPE, stdout=terminal, stderr=terminal)
-            env = dict(os.environ, LC_ALL='C.UTF-8', LANG='C.UTF-8', TERM='xterm', COLUMNS='100', LINES='30',
+            env = dict(os.environ, LC_ALL='C.UTF-8', LANG='C.UTF-8', TERM=os.environ.get('TERM', 'linux'), COLUMNS='100', LINES='30',
                        SYSTEMD_PAGER='cat', PAGER='cat', SYSTEMD_COLORS='0',
                        SYSTEMD_PAGERSECURE='1', GIT_PAGER='cat')
             # argv is passed directly, never converted into shell text.
@@ -333,7 +340,7 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
                     while '\n' in pending:
                         line, pending = pending.split('\n', 1)
                         consume(line, log)
-                        if time.monotonic() - last_update >= 0.08:
+                        if time.monotonic() - last_update >= 0.25:
                             emit()
                 if time.monotonic() - last_update >= 0.5:
                     emit()

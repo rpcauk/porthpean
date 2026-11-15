@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# One transaction per requested package, with one persistent progress dialog.
+set -euo pipefail
+index=0
+for package in "$@"; do
+  [[ $package =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || exit 2
+  ((index+=1))
+  printf '\nPORTHPEAN_PACKAGE %s/%s %s\n' "$index" "$#" "$package"
+  pacman -S --needed --noconfirm "$package"
+done

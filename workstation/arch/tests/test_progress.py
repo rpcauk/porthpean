@@ -75,6 +75,16 @@ class ProgressTests(unittest.TestCase):
         """)
         self.assertEqual(status, 0)
 
+    def test_package_marker_persists_without_raw_output(self):
+        status, log, frames, _ = self.run_worker("""
+            print('PORTHPEAN_PACKAGE 2/3 niri', flush=True)
+            print('very long raw pacman output', flush=True)
+        """)
+        self.assertEqual(status, 0)
+        self.assertIn('Package 2/3: niri', frames)
+        self.assertNotIn('very long raw pacman output', frames)
+        self.assertIn('very long raw pacman output', log)
+
     def test_failure_returns_real_status_without_false_completion(self):
         status, log, frames, _ = self.run_worker('''
             import sys
