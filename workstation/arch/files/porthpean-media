@@ -9,11 +9,9 @@ def player(*args):
 
 try:
     sources = player('-l').splitlines()
-    if sources:
-        statuses = [(name, player('-p', name, 'status')) for name in sources]
-        source, status = next((pair for pair in statuses if pair[1] == 'Playing'), statuses[0])
-        print(html.escape(f'{source.split(".")[0]} | {status or "Stopped"}'))
-    else:
-        print('No media playing')
+    for source in sources:
+        if player('-p', source, 'status') == 'Playing':
+            print(html.escape(f'{source.split(".")[0]} | Playing'))
+            break
 except (OSError, subprocess.TimeoutExpired):
-    print('No media playing')
+    pass
