@@ -83,7 +83,8 @@
     - name: Install official packages (bootstrap already performed complete upgrade)
       tags: [packages]
       ansible.builtin.command:
-        argv: "{{ ['pacman', '-S', '--needed', '--noconfirm'] + packages }}"
+        argv: [pacman, '-S', '--needed', '--noconfirm', '{{ item }}']
+      loop: '{{ packages }}'
       register: package_install
       changed_when: "'there is nothing to do' not in (package_install.stdout + package_install.stderr)"
       when: not ansible_check_mode and not (packages_preinstalled | default(false) | bool)

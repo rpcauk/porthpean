@@ -65,8 +65,8 @@ else
     fi
   fi
 fi
-# Repair known directories left restrictive by early base installers; never recurse.
-repair_system_permissions /
+# Converge declared system-directory modes; pacman owns its database contents.
+ensure_system_permissions /
 runuser -u alpm -- test -x /var/cache/pacman/pkg
 # AUR builds open both installed and repository metadata without root privileges.
 runuser -u "$daily_user" -- pacman -Q >/dev/null

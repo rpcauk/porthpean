@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Explicit, repeat-safe migration for installations made by the early installer.
+# This is NOT called by normal bootstrap or updates. No disk/boot changes.
+set -euo pipefail
+[[ $EUID == 0 && -f /etc/arch-release && ! -d /run/archiso ]] || exit 1
+base=$(cd -- "$(dirname -- "$0")/.." && pwd)
+source "$base/permissions.sh"
+source "$base/recovery/pacman-metadata.sh"
+ensure_system_permissions /
+recover_legacy_pacman_metadata /
+plugin=/usr/share/zsh/plugins/fast-syntax-highlighting
+if [[ -d $plugin ]] && ! pacman -Q zsh-fast-syntax-highlighting >/dev/null 2>&1; then
+  [[ -d $plugin/.git && $(git -C "$plugin" rev-parse HEAD) == 4672ad5dd9ad68a7effc1476d65afb7c584ce2b3 ]] || {
+    echo 'Unmanaged highlighting checkout differs; review it manually.' >&2; exit 1;
+  }
+  install -d -m 0700 /var/lib/porthpean
+  backup=$(mktemp -d /var/lib/porthpean/early-fsh.XXXXXXXX)
+  mv -- "$plugin" "$backup/plugin"
+  printf 'Earlier highlighting checkout retained at %s/plugin\n' "$backup"
+fi
+printf '%s\n' 'Early layout migration complete. Run normal workstation bootstrap next.'

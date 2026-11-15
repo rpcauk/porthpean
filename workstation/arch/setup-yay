@@ -20,26 +20,6 @@ if ! pacman -Q yay >/dev/null 2>&1; then
   [[ $(pacman -Qp "$staging/yay.pkg.tar.zst") == 'yay 13.1.0-1' ]] || exit 1
   pacman -U --noconfirm "$staging/yay.pkg.tar.zst"
 fi
-# Migrate the earlier unmanaged plugin checkout so pacman can own these files.
-plugin=/usr/share/zsh/plugins/fast-syntax-highlighting
-plugin_backup=
-setup_cleanup() {
-  local status=$?
-  aur_cleanup
-  if [[ $status != 0 && -n $plugin_backup && ! -e $plugin ]]; then
-    mv -- "$plugin_backup/plugin" "$plugin"
-  fi
-  return "$status"
-}
-trap setup_cleanup EXIT
-if [[ -d $plugin && ! $(pacman -Q zsh-fast-syntax-highlighting 2>/dev/null || true) ]]; then
-  [[ -d $plugin/.git && $(git -C "$plugin" rev-parse HEAD) == 4672ad5dd9ad68a7effc1476d65afb7c584ce2b3 ]] || {
-    echo 'Unmanaged highlighting files differ from the earlier installer; review them before migration.' >&2; exit 1;
-  }
-  install -d -m 0700 /var/lib/porthpean
-  plugin_backup=$(mktemp -d /var/lib/porthpean/fsh-backup.XXXXXXXX)
-  mv -- "$plugin" "$plugin_backup/plugin"
-fi
 # Ensure ordinary AUR package installation goes through the helper, one at a time.
 aur_enable_install
 aur_yay -S --aur --needed --noconfirm zsh-fast-syntax-highlighting

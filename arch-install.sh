@@ -394,13 +394,13 @@ if __name__ == '__main__':
 PORTHPEAN_PROGRESS_PY
 }
 
-# Known directory modes; only public pacman database metadata is repaired recursively.
-repair_system_permissions() {
+# Declared system-directory modes; package-owned metadata is managed by pacman.
+ensure_system_permissions() {
   local root=${1%/} path mode
   while read -r mode path; do
     [[ -d $root$path && ! -L $root$path ]] || { echo "Expected real system directory: $root$path" >&2; return 1; }
     [[ $(stat -c %u "$root$path") == 0 ]] || { echo "Unexpected owner: $root$path" >&2; return 1; }
-    chmod "$mode" "$root$path" || return 1
+    [[ $(stat -c %a "$root$path") == "${mode#0}" ]] || chmod "$mode" "$root$path" || return 1
     [[ $(stat -c %a "$root$path") == "${mode#0}" ]] || return 1
   done <<'MODES'
 0755 /
@@ -421,42 +421,6 @@ repair_system_permissions() {
 0700 /.snapshots
 0700 /srv/workstation-state
 MODES
-  # Package metadata is public. Do not touch cache downloads, db.lck or other state.
-  python3 - "$root" <<'PACMAN_METADATA'
-import os
-from pathlib import Path
-import stat
-import pwd
-import sys
-
-root = Path(sys.argv[1] or '/')
-owner = root.stat().st_uid
-local = root / 'var/lib/pacman/local'
-paths = []
-for directory, subdirs, files in os.walk(local, followlinks=False):
-    paths += [(Path(directory) / name, {owner}) for name in subdirs + files]
-sync_owners = {owner}
-try:
-    sync_owners.add(pwd.getpwnam('alpm').pw_uid)
-except KeyError:
-    pass
-# Sync downloads use private download-* staging directories: never descend into them.
-for path in (root / 'var/lib/pacman/sync').iterdir():
-    if path.name.endswith(('.db', '.db.sig', '.files', '.files.sig')):
-        paths.append((path, sync_owners))
-for path, owners in paths:
-    info = path.lstat()
-    if stat.S_ISLNK(info.st_mode):
-        continue
-    if info.st_uid not in owners:
-        raise SystemExit(f'Unexpected owner in pacman database: {path}')
-    if stat.S_ISDIR(info.st_mode):
-        path.chmod(0o755)
-    elif stat.S_ISREG(info.st_mode):
-        path.chmod(0o644)
-    else:
-        raise SystemExit(f'Unexpected file type in pacman database: {path}')
-PACMAN_METADATA
 }
 
 # Run outside arch-chroot: firmware variables must be written from the live host.
@@ -628,7 +592,7 @@ run_progress "Installing the Arch base" pacstrap -K /mnt base linux-lts linux li
   neovim less libnewt python man-db man-pages mkinitcpio efibootmgr systemd-ukify refind
 umask 077
 # Verify the installed configuration directory is traversable by services.
-repair_system_permissions /mnt
+ensure_system_permissions /mnt
 # Verify actual access as pacman's unprivileged downloader, retaining its sandbox.
 arch-chroot /mnt runuser -u alpm -- test -x /var/cache/pacman/pkg
 [[ -e /mnt/etc/fstab ]] && cp -a /mnt/etc/fstab "/mnt/etc/fstab.before-porthpean.$(date +%s)"
