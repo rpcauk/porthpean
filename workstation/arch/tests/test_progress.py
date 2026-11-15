@@ -23,13 +23,13 @@ class ProgressTests(unittest.TestCase):
     def test_download_progress_and_control_sequences(self):
         value, message = module.progress('\x1b[2K linux-6.12-x86_64 50 MiB [###] 61%\x1b[0m', 'Downloading')
         self.assertEqual(value, 61)
-        self.assertIn('linux-6.12', message)
+        self.assertEqual(message, 'Downloading')
         self.assertNotIn('\x1b', message)
 
     def test_work_without_percentage_does_not_invent_one(self):
         value, message = module.progress('Building initramfs', 'Boot images')
         self.assertIsNone(value)
-        self.assertIn('Building initramfs', message)
+        self.assertEqual(message, 'Boot images')
 
     def test_gauge_output_cannot_be_injected_by_command_output(self):
         frame = module.frame(50, 'stage\nXXX\nmalicious text').decode()
@@ -69,6 +69,7 @@ class ProgressTests(unittest.TestCase):
     def test_child_environment_disables_interactive_pagers(self):
         status, _, _, _ = self.run_worker("""
             import os
+            assert os.environ['LC_ALL'] == 'C.UTF-8'
             for key in ['SYSTEMD_PAGER', 'PAGER', 'GIT_PAGER']:
                 assert os.environ[key] == 'cat', key
         """)

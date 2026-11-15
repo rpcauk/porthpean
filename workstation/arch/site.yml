@@ -54,6 +54,7 @@
       - btrfs-progs
   tasks:
     - name: Validate platform and requested identity
+      tags: [always]
       ansible.builtin.assert:
         that:
           - ansible_facts.distribution == 'Archlinux'
@@ -64,16 +65,19 @@
           - agent_users | difference(['codex', 'amp']) | length == 0
           - xkb_layout is match('^[a-z]{2}$')
     - name: Read local daily user record
+      tags: [always]
       ansible.builtin.getent:
         database: passwd
         key: '{{ daily_user }}'
     - name: Install official packages (bootstrap already performed complete upgrade)
+      tags: [packages]
       ansible.builtin.command:
         argv: "{{ ['pacman', '-S', '--needed', '--noconfirm'] + packages }}"
       register: package_install
       changed_when: "'there is nothing to do' not in (package_install.stdout + package_install.stderr)"
       when: not ansible_check_mode and not (packages_preinstalled | default(false) | bool)
     - name: Create isolated agent accounts with locked passwords and no privileged groups
+      tags: [accounts]
       ansible.builtin.user:
         name: '{{ item }}'
         shell: /bin/bash
@@ -83,6 +87,7 @@
         password_lock: true
       loop: '{{ agent_users }}'
     - name: Protect personal and agent homes
+      tags: [accounts]
       ansible.builtin.file:
         path: '/home/{{ item }}'
         state: directory
@@ -91,6 +96,7 @@
         group: '{{ item }}'
       loop: '{{ [daily_user] + agent_users }}'
     - name: Create private per-agent workspaces
+      tags: [accounts]
       ansible.builtin.file:
         path: '/home/{{ item }}/Projects'
         state: directory
@@ -99,6 +105,7 @@
         mode: '0700'
       loop: '{{ agent_users }}'
     - name: Install agent operating instructions
+      tags: [accounts]
       ansible.builtin.copy:
         src: files/agent-AGENTS.md
         dest: '/home/{{ item }}/Projects/AGENTS.md'
@@ -107,6 +114,7 @@
         mode: '0600'
       loop: '{{ agent_users }}'
     - name: Create user configuration directories
+      tags: [desktop]
       ansible.builtin.file:
         path: '/home/{{ daily_user }}/.config/{{ item }}'
         state: directory
@@ -115,6 +123,7 @@
         mode: '0700'
       loop: ['', niri, waybar, mako, foot]
     - name: Install managed desktop files (backs up existing files)
+      tags: [desktop]
       ansible.builtin.copy:
         src: 'files/{{ item.src }}'
         dest: '/home/{{ daily_user }}/.config/{{ item.dest }}'
@@ -127,6 +136,7 @@
         - {src: mako.conf, dest: mako/config}
         - {src: foot.ini, dest: foot/foot.ini}
     - name: Render Niri configuration from the selected keyboard profile
+      tags: [desktop]
       ansible.builtin.template:
         src: files/config.kdl.j2
         dest: '/home/{{ daily_user }}/.config/niri/config.kdl'
@@ -134,17 +144,14 @@
         group: '{{ daily_user }}'
         mode: '0600'
         backup: true
-    - name: Record non-secret installation choices for checks
-      ansible.builtin.copy:
-        dest: /etc/porthpean-workstation.json
-        mode: '0600'
-        content: '{{ {"daily_user": daily_user, "agent_users": agent_users, "xkb_layout": xkb_layout} | to_nice_json }}'
     - name: Validate installed Niri configuration without starting desktop
+      tags: [validate]
       ansible.builtin.command:
         argv: [niri, validate, -c, '/home/{{ daily_user }}/.config/niri/config.kdl']
       changed_when: false
       when: not ansible_check_mode
     - name: Install greetd configuration without autologin
+      tags: [services]
       ansible.builtin.copy:
         dest: /etc/greetd/config.toml
         mode: '0644'
@@ -156,6 +163,7 @@
           command = "tuigreet --time --cmd niri-session"
           user = "greeter"
     - name: Configure compressed RAM swap, no hibernation
+      tags: [services]
       ansible.builtin.copy:
         dest: /etc/systemd/zram-generator.conf
         mode: '0644'
@@ -164,20 +172,30 @@
           zram-size = min(ram / 2, 4096)
           compression-algorithm = zstd
     - name: Install standalone workstation firewall policy
+      tags: [services]
       ansible.builtin.copy:
         src: files/nftables.conf
         dest: /etc/nftables.conf
         mode: '0600'
         backup: true
     - name: Validate firewall before activation on next reboot
+      tags: [validate]
       ansible.builtin.command: nft --check --file /etc/nftables.conf
       changed_when: false
       when: not ansible_check_mode
     - name: Enable local desktop and firewall for next boot, no session restart
+      tags: [activate]
       ansible.builtin.systemd_service:
         name: '{{ item }}'
         enabled: true
       loop: [greetd.service, nftables.service]
     - name: State remaining interactive gates
+      tags: [finalize]
       ansible.builtin.debug:
         msg: 'Reboot deliberately after reviewing results. Agent installers/authentication, Kanata remapping, backup destination and Secure Boot enrollment are separate documented steps. No SSH listener or unattended agent enabled.'
+    - name: Record non-secret installation choices for checks
+      tags: [finalize]
+      ansible.builtin.copy:
+        dest: /etc/porthpean-workstation.json
+        mode: '0600'
+        content: '{{ {"daily_user": daily_user, "agent_users": agent_users, "xkb_layout": xkb_layout} | to_nice_json }}'

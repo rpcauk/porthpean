@@ -13,6 +13,8 @@ command -v whiptail >/dev/null || { echo 'Install the dialog dependency first: p
 source "$base/ui.sh"
 source "$base/permissions.sh"
 umask 022
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+[[ $(locale charmap) == UTF-8 ]] || { echo "A UTF-8 locale is required." >&2; exit 1; }
 progress_dir=$(mktemp -d /root/porthpean-progress.XXXXXXXX)
 install_log="$progress_dir/install.log"
 : > "$install_log"
@@ -66,12 +68,30 @@ fi
 # Repair known directories left restrictive by early base installers; never recurse.
 repair_system_permissions /
 runuser -u alpm -- test -x /var/cache/pacman/pkg
-run_progress 'Updating packages and installing provisioning tools' pacman -Syu --needed --noconfirm ansible-core python
+run_progress 'Upgrading the installed system' pacman -Syu --noconfirm
+for tool in python ansible-core; do
+  run_progress "Installing setup tool: $tool" pacman -S --needed --noconfirm "$tool"
+done
 package_lines=$(python3 -c 'import sys,yaml; print("\n".join(yaml.safe_load(open(sys.argv[1]))[0]["vars"]["packages"]))' "$base/site.yml")
 mapfile -t packages <<< "$package_lines"
 [[ ${#packages[@]} -gt 0 ]] || exit 1
-run_progress 'Installing desktop packages' pacman -S --needed --noconfirm "${packages[@]}"
+index=0
+for package in "${packages[@]}"; do
+  ((index+=1))
+  run_progress "Desktop package $index/${#packages[@]}: $package" pacman -S --needed --noconfirm "$package"
+done
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
-run_progress 'Configuring the desktop and accounts' ansible-playbook -i localhost, -c local "$base/site.yml" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
+for stage in accounts desktop services validate activate finalize; do
+  case "$stage" in
+    accounts) label='Configuring isolated agent accounts' ;;
+    desktop) label='Configuring the daily desktop' ;;
+    services) label='Configuring login, swap and firewall' ;;
+    validate) label='Checking desktop and firewall configuration' ;;
+    activate) label='Enabling verified services for next boot' ;;
+    finalize) label='Recording completed setup' ;;
+  esac
+  run_progress "$label" ansible-playbook -i localhost, -c local "$base/site.yml" \
+    --tags "$stage" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
+done
 if ui_yesno 'Workstation ready' "Configuration applied. Log in as $daily_user after reboot.\n\nReboot now?"; then reboot; fi

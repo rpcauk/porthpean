@@ -33,9 +33,8 @@ def progress(line, stage):
         index, total, action, name = package.groups()
         return min(int(percent[1]), 100) if percent else 0, f'{stage}\n{action.capitalize()} {name} ({index}/{total})'
     if percent:
-        label = line.split('[', 1)[0].strip()
-        return min(int(percent[1]), 100), f'{stage}\n{label[:160]}'
-    return None, f'{stage}\n{line[:180]}' if line else stage
+        return min(int(percent[1]), 100), stage
+    return None, stage
 
 
 def frame(percent, message):
@@ -97,7 +96,7 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
         with os.fdopen(descriptor, 'a', encoding='utf-8', buffering=1) as log:
             log.write(f'\n=== {stage} ===\n')
             gauge = subprocess.Popen(gauge_command, stdin=subprocess.PIPE, stdout=terminal, stderr=terminal)
-            env = dict(os.environ, LC_ALL='C', TERM='xterm', COLUMNS='100', LINES='30',
+            env = dict(os.environ, LC_ALL='C.UTF-8', LANG='C.UTF-8', TERM='xterm', COLUMNS='100', LINES='30',
                        SYSTEMD_PAGER='cat', PAGER='cat', SYSTEMD_COLORS='0',
                        SYSTEMD_PAGERSECURE='1', GIT_PAGER='cat')
             # argv is passed directly, never converted into shell text.
