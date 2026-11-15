@@ -66,6 +66,14 @@ class ProgressTests(unittest.TestCase):
         self.assertIn('Exit status: 0', log)
         self.assertEqual(mode, 0o600)
 
+    def test_child_environment_disables_interactive_pagers(self):
+        status, _, _, _ = self.run_worker("""
+            import os
+            for key in ['SYSTEMD_PAGER', 'PAGER', 'GIT_PAGER']:
+                assert os.environ[key] == 'cat', key
+        """)
+        self.assertEqual(status, 0)
+
     def test_failure_returns_real_status_without_false_completion(self):
         status, log, frames, _ = self.run_worker('''
             import sys

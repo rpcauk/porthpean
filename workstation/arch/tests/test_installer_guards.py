@@ -20,7 +20,7 @@ class DiskGuards(unittest.TestCase):
         reset = script.index('umask 077', packages)
         self.assertNotIn('umask 077', script[start:packages])
         self.assertLess(packages, reset)
-        self.assertIn('stat -c %a /mnt/etc', script[reset:])
+        self.assertIn('repair_system_permissions /mnt', script[reset:])
         import tempfile
         with tempfile.TemporaryDirectory() as root:
             result = subprocess.run(['bash', '-c', 'umask 077; umask 022; mkdir "$1/etc"', 'test', root], text=True, capture_output=True)

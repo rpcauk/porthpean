@@ -97,7 +97,9 @@ def run_command(command, stage, log_path, *, terminal=None, stdin=None, gauge_co
         with os.fdopen(descriptor, 'a', encoding='utf-8', buffering=1) as log:
             log.write(f'\n=== {stage} ===\n')
             gauge = subprocess.Popen(gauge_command, stdin=subprocess.PIPE, stdout=terminal, stderr=terminal)
-            env = dict(os.environ, LC_ALL='C', TERM='xterm', COLUMNS='100', LINES='30')
+            env = dict(os.environ, LC_ALL='C', TERM='xterm', COLUMNS='100', LINES='30',
+                       SYSTEMD_PAGER='cat', PAGER='cat', SYSTEMD_COLORS='0',
+                       SYSTEMD_PAGERSECURE='1', GIT_PAGER='cat')
             # argv is passed directly, never converted into shell text.
             child = subprocess.Popen(command, stdin=stdin, stdout=slave, stderr=slave, env=env, start_new_session=True)
             os.close(slave)

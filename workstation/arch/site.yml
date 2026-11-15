@@ -113,7 +113,7 @@
         owner: '{{ daily_user }}'
         group: '{{ daily_user }}'
         mode: '0700'
-      loop: [niri, waybar, mako, foot]
+      loop: ['', niri, waybar, mako, foot]
     - name: Install managed desktop files (backs up existing files)
       ansible.builtin.copy:
         src: 'files/{{ item.src }}'

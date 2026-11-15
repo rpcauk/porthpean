@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download this file, read it, then run with sudo from the installed Arch base.
+# Download this file, read it, then run as root from the installed Arch base.
 set -euo pipefail
 [[ $EUID == 0 ]] || { echo 'Run as root after reviewing this file.' >&2; exit 1; }
 [[ -t 0 && -t 1 ]] || { echo 'Download and run interactively; do not pipe curl into a shell.'; exit 1; }

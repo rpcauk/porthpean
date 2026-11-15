@@ -23,3 +23,11 @@ Remaining machine-specific work: Secure Boot trust/signing automation, verified 
 Validation performed on the Mac: shell parsing, Ansible syntax and local configuration rendering. No target-machine execution has been done.
 
 During setup, whiptail shows the current stage and elapsed time. Package downloads/installation use real pacman percentages; installation identifies the package and transaction position. Commands run behind the dialog, with a private output log and an error-log viewer on failure. Password input is never included in that log.
+
+## Installer permission repairs and audit
+
+Both base installation and the desktop bootstrap enforce a shared, non-recursive policy for known system directories. This repairs early installations whose `/etc` or pacman cache parents were mode 0700. `/`, `/etc`, `/home`, `/var`, cache parents, `/var/log` and `/srv` use 0755; `/var/tmp` uses 1777; `/root`, snapshots and workstation state remain 0700. Private user homes and download child directories are never recursively changed. Unexpected owners and symlinks stop the repair. Pacman's actual `alpm` account must be able to traverse its cache before provisioning continues; downloading as root or disabling the sandbox is not a workaround.
+
+The standalone base installer embeds the same permissions policy, checked for equality in tests. Progress commands disable systemd/Git/general pagers so a hidden pager cannot stall setup. The `check` script now fails on unexpected home/system modes, unavailable D-Bus/NetworkManager or inaccessible pacman cache.
+
+Validation covers temporary-directory permission repair/idempotence, preservation of private children, symlink rejection, simulated firmware/menu setup, progress subprocesses, password handling and disk guards, plus shell and Ansible syntax. It does not emulate Arch package transactions, firmware, the graphical session or Secure Boot. Run the workstation `check` as root after provisioning, then test both boot choices and desktop login on hardware. Vendor-agent installation/authentication, backup destination/restore, Kanata and Secure Boot enrollment remain explicit follow-up work.
