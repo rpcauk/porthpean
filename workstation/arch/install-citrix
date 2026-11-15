@@ -38,7 +38,7 @@ if [[ $(pacman -Q icaclient 2>/dev/null || true) != "icaclient $version" ]]; the
   aur_as_user rm -f "$build/source/.SRCINFO"
   aur_enable_install
   run_progress 'Installing Citrix Workspace with yay' bash "$base/aur-user" "$daily" "$build/source" \
-    /usr/bin/yay -Bi --noconfirm --sudo /usr/bin/sudo --sudoflags=-n --nosudoloop "$build/source"
+    /usr/bin/yay -Bi --noconfirm --sudo /usr/bin/sudo --sudoflags=-n --sudoloop=false "$build/source"
   [[ $(pacman -Q icaclient) == "icaclient $version" ]] || exit 1
 fi
 # Vendor services are not enabled, and security/USB/app-protection components aren't added.

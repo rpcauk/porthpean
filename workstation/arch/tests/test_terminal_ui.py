@@ -18,10 +18,17 @@ class TerminalUI(unittest.TestCase):
             self.assertIn('failure', result.stdout)
             self.assertEqual(log.read_text(), 'output\nfailure\n')
 
-    def test_yay_receives_supported_privilege_options(self):
+    def test_yay_receives_configured_privilege_options(self):
         result = subprocess.check_output(['bash', '-c',
             'source "$1/aur.sh"; aur_as_user() { printf "%s\\n" "$@"; }; aur_yay -S --needed example',
             'test', str(BASE)], text=True)
         self.assertEqual(result.splitlines(), ['/usr/bin/yay', '--sudo', '/usr/bin/sudo',
-                         '--sudoflags=-n', '--nosudoloop', '-S', '--needed', 'example'])
+                         '--sudoflags=-n', '--sudoloop=false', '-S', '--needed', 'example'])
         self.assertNotIn('--sudobin', (BASE / 'install-citrix').read_text())
+
+    def test_installers_do_not_use_removed_yay_options(self):
+        for name in ('aur.sh', 'install-citrix'):
+            text = (BASE / name).read_text()
+            self.assertNotIn('--nosudoloop', text)
+            self.assertNotIn('--sudobin', text)
+            self.assertIn('--sudoloop=false', text)

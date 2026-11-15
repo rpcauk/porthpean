@@ -37,7 +37,7 @@ aur_enable_install() {
   visudo -c
 }
 aur_yay() {
-  aur_as_user /usr/bin/yay --sudo /usr/bin/sudo --sudoflags=-n --nosudoloop "$@"
+  aur_as_user /usr/bin/yay --sudo /usr/bin/sudo --sudoflags=-n --sudoloop=false "$@"
 }
 aur_cleanup() {
   rm -f -- "$aur_sudo_file"
