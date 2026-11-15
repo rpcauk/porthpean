@@ -22,4 +22,6 @@ if ! pacman -Q yay >/dev/null 2>&1; then
 fi
 # Ensure ordinary AUR package installation goes through the helper, one at a time.
 aur_enable_install
-aur_yay -S --aur --needed --noconfirm zsh-fast-syntax-highlighting
+for package in zsh-fast-syntax-highlighting tofi; do
+  aur_yay -S --aur --needed --noconfirm "$package"
+done

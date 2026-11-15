@@ -17,8 +17,8 @@
       - pipewire-pulse
       - wireplumber
       - greetd
-      - greetd-tuigreet
-      - greetd-regreet
+      - python-gobject
+      - gtk4
       - cage
       - plymouth
       - swaybg
@@ -35,7 +35,7 @@
       - brightnessctl
       - polkit
       - gnome-keyring
-      - firefox
+      - librewolf
       - mpv
       - zathura
       - zathura-pdf-mupdf
@@ -196,7 +196,7 @@
         owner: '{{ daily_user }}'
         group: '{{ daily_user }}'
         mode: '0700'
-      loop: ['', niri, waybar, mako, foot, fuzzel, hypr, gtk-3.0, gtk-4.0]
+      loop: ['', niri, waybar, mako, foot, fuzzel, tofi, hypr, gtk-3.0, gtk-4.0]
     - name: Install managed desktop files (backs up existing files)
       tags: [desktop]
       ansible.builtin.copy:
@@ -212,6 +212,7 @@
         - {src: foot.ini, dest: foot/foot.ini}
         - {src: waybar.css, dest: waybar/style.css}
         - {src: fuzzel.ini, dest: fuzzel/fuzzel.ini}
+        - {src: tofi.conf, dest: tofi/config}
         - {src: hyprlock.conf, dest: hypr/hyprlock.conf}
         - {src: gtk-settings.ini, dest: gtk-3.0/settings.ini}
         - {src: gtk-settings.ini, dest: gtk-4.0/settings.ini}
@@ -279,11 +280,32 @@
           Terminal=false
           NoDisplay=true
           MimeType=application/x-ica;
-    - name: Associate downloaded ICA sessions with the native client
+    - name: Set browser and ICA defaults only when they differ
       tags: [desktop]
       ansible.builtin.command:
-        argv: [runuser, '-u', '{{ daily_user }}', '--', env, 'HOME=/home/{{ daily_user }}', 'XDG_CONFIG_HOME=/home/{{ daily_user }}/.config', xdg-mime, default, porthpean-citrix-ica.desktop, application/x-ica]
-      changed_when: false
+        argv:
+          - runuser
+          - '-u'
+          - '{{ daily_user }}'
+          - '--'
+          - env
+          - 'HOME=/home/{{ daily_user }}'
+          - 'XDG_CONFIG_HOME=/home/{{ daily_user }}/.config'
+          - XDG_CURRENT_DESKTOP=niri
+          - bash
+          - '-c'
+          - 'if [[ $(xdg-mime query default "$2") != "$1" ]]; then xdg-mime default "$1" "$2" || exit; echo changed; fi'
+          - defaults
+          - '{{ item.desktop }}'
+          - '{{ item.mime }}'
+      loop:
+        - {desktop: librewolf.desktop, mime: text/html}
+        - {desktop: librewolf.desktop, mime: application/xhtml+xml}
+        - {desktop: librewolf.desktop, mime: x-scheme-handler/http}
+        - {desktop: librewolf.desktop, mime: x-scheme-handler/https}
+        - {desktop: porthpean-citrix-ica.desktop, mime: application/x-ica}
+      register: default_app
+      changed_when: "'changed' in default_app.stdout_lines"
       when: not ansible_check_mode
     - name: Install the unprivileged agent installer
       tags: [desktop]
@@ -309,11 +331,11 @@
           Categories=Utility;
       loop:
         - {id: citrix, name: Citrix Workspace portal, exec: 'porthpean-citrix'}
-        - {id: chatgpt, name: ChatGPT, exec: 'firefox https://chatgpt.com/'}
+        - {id: chatgpt, name: ChatGPT, exec: 'librewolf https://chatgpt.com/'}
         - {id: codex, name: Codex agent, exec: 'porthpean-agent codex'}
         - {id: amp, name: Amp agent, exec: 'porthpean-agent amp'}
-        - {id: codex-web, name: Codex web, exec: 'firefox https://chatgpt.com/codex'}
-        - {id: amp-web, name: Amp web, exec: 'firefox https://ampcode.com/'}
+        - {id: codex-web, name: Codex web, exec: 'librewolf https://chatgpt.com/codex'}
+        - {id: amp-web, name: Amp web, exec: 'librewolf https://ampcode.com/'}
     - name: Install graphical login palette and settings
       tags: [services]
       ansible.builtin.copy:
@@ -324,8 +346,16 @@
         mode: '0644'
         backup: true
       loop:
-        - {src: dark-plus.css, dest: dark-plus.css}
-        - {src: regreet.toml, dest: regreet.toml}
+        - {src: login.css, dest: login.css}
+    - name: Install the plain graphical greetd login surface
+      tags: [services]
+      ansible.builtin.copy:
+        src: files/porthpean-greeter
+        dest: /usr/local/bin/porthpean-greeter
+        owner: root
+        group: root
+        mode: '0755'
+        backup: true
     - name: Keep kernel logs in journal instead of over the login prompt
       tags: [services]
       ansible.builtin.copy:
@@ -348,6 +378,19 @@
         argv: [niri, validate, -c, '/home/{{ daily_user }}/.config/niri/config.kdl']
       changed_when: false
       when: not ansible_check_mode
+    - name: Validate graphical login dependencies before activation
+      tags: [validate]
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - '-u'
+          - greeter
+          - '--'
+          - python3
+          - '-c'
+          - "import ast, pathlib, gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk; ast.parse(pathlib.Path('/usr/local/bin/porthpean-greeter').read_text()); assert pathlib.Path('/usr/bin/niri-session').is_file(); assert pathlib.Path('/etc/greetd/login.css').is_file()"
+      changed_when: false
+      when: not ansible_check_mode
     - name: Install greetd configuration without autologin
       tags: [services]
       ansible.builtin.copy:
@@ -358,7 +401,7 @@
           [terminal]
           vt = 1
           [default_session]
-          command = "env XKB_DEFAULT_LAYOUT={{ xkb_layout }} GTK_USE_PORTAL=0 GDK_DEBUG=no-portals dbus-run-session cage -s -- regreet --style /etc/greetd/dark-plus.css"
+          command = "env XKB_DEFAULT_LAYOUT={{ xkb_layout }} GTK_USE_PORTAL=0 GDK_DEBUG=no-portals dbus-run-session cage -s -- /usr/local/bin/porthpean-greeter {{ daily_user }}"
           user = "greeter"
     - name: Configure compressed RAM swap, no hibernation
       tags: [services]

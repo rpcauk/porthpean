@@ -19,21 +19,22 @@ spawn-at-startup "waybar"
 spawn-at-startup "mako"
 spawn-at-startup "swayidle" "-w" "timeout" "300" "porthpean-lock" "before-sleep" "porthpean-lock --wait"
 binds {
-    Mod+Return { spawn "foot"; }
-    Mod+D { spawn "fuzzel"; }
-    Mod+Space { spawn "fuzzel"; }
-    Mod+B { spawn "firefox"; }
-    Mod+E { spawn "thunderbird"; }
-    Mod+G { spawn "firefox" "https://chatgpt.com/"; }
-    Mod+C { spawn "porthpean-agent" "codex"; }
-    Mod+A { spawn "porthpean-agent" "amp"; }
-    Mod+Shift+C { spawn "firefox" "https://chatgpt.com/codex"; }
-    Mod+Shift+A { spawn "firefox" "https://ampcode.com/"; }
-    Mod+W { spawn "porthpean-citrix"; }
+    Mod+F1 hotkey-overlay-title="Shortcut map" { show-hotkey-overlay; }
+    Mod+Return hotkey-overlay-title="Terminal" { spawn "foot"; }
+    Mod+D hotkey-overlay-title="Application launcher" { spawn "tofi-drun"; }
+    Mod+Space hotkey-overlay-title="Application launcher" { spawn "tofi-drun"; }
+    Mod+B hotkey-overlay-title="LibreWolf" { spawn "librewolf"; }
+    Mod+E hotkey-overlay-title="Thunderbird" { spawn "thunderbird"; }
+    Mod+G hotkey-overlay-title="ChatGPT" { spawn "librewolf" "https://chatgpt.com/"; }
+    Mod+C hotkey-overlay-title="Codex terminal" { spawn "porthpean-agent" "codex"; }
+    Mod+A hotkey-overlay-title="Amp terminal" { spawn "porthpean-agent" "amp"; }
+    Mod+Shift+C hotkey-overlay-title="Codex web" { spawn "librewolf" "https://chatgpt.com/codex"; }
+    Mod+Shift+A hotkey-overlay-title="Amp web" { spawn "librewolf" "https://ampcode.com/"; }
+    Mod+W hotkey-overlay-title="Citrix Workspace" { spawn "porthpean-citrix"; }
     XF86AudioPlay { spawn "playerctl" "play-pause"; }
     XF86AudioNext { spawn "playerctl" "next"; }
     XF86AudioPrev { spawn "playerctl" "previous"; }
-    Mod+Shift+L { spawn "porthpean-lock"; }
+    Mod+Shift+L hotkey-overlay-title="Lock screen" { spawn "porthpean-lock"; }
     Mod+Q { close-window; }
     Mod+H { focus-column-left; }
     Mod+J { focus-window-down; }

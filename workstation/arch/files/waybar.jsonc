@@ -1,10 +1,49 @@
 {
-  "layer": "top", "position": "bottom", "height": 30, "spacing": 0,
-  "modules-left": ["niri/workspaces"],
-  "modules-right": ["network", "pulseaudio", "battery", "clock"],
-  "niri/workspaces": {"format": "{index}", "disable-scroll": true},
-  "network": {"format-wifi": "wifi {signalStrength}%", "format-ethernet": "wired", "format-disconnected": "offline", "tooltip-format": "{ifname}: {ipaddr}", "on-click": "foot nmcli device status"},
-  "pulseaudio": {"format": "vol {volume}%", "format-muted": "muted", "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", "scroll-step": 5},
-  "battery": {"format": "bat {capacity}%", "format-charging": "charging {capacity}%", "format-full": "full", "states": {"warning": 20, "critical": 10}},
-  "clock": {"format": "{:%H:%M  %a %d %b}", "tooltip-format": "{:%A %d %B %Y}"}
+  "layer": "top",
+  "position": "bottom",
+  "height": 30,
+  "spacing": 0,
+  "modules-left": [
+    "niri/workspaces"
+  ],
+  "modules-right": [
+    "network",
+    "pulseaudio",
+    "battery",
+    "clock"
+  ],
+  "niri/workspaces": {
+    "format": "{index}",
+    "hide-empty": true
+  },
+  "network": {
+    "format-wifi": "W {signalStrength}%",
+    "format-ethernet": "E",
+    "format-disconnected": "offline",
+    "tooltip-format": "{ifname}: {ipaddr}",
+    "on-click": "foot nmcli device status",
+    "tooltip-format-ethernet": "Ethernet {ifname}: {ipaddr}",
+    "tooltip-format-wifi": "Wi-Fi {essid}: {signalStrength}%"
+  },
+  "pulseaudio": {
+    "format": "vol {volume}%",
+    "format-muted": "muted",
+    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+    "scroll-step": 5
+  },
+  "battery": {
+    "format": "B:{capacity}% \u2193",
+    "format-charging": "B:{capacity}% \u2191",
+    "format-full": "B:{capacity}% =",
+    "states": {
+      "warning": 20,
+      "critical": 10
+    },
+    "format-plugged": "B:{capacity}% =",
+    "tooltip-format": "{capacity}% \u00b7 {timeTo}"
+  },
+  "clock": {
+    "format": "{:%H:%M  %a %d %b}",
+    "tooltip-format": "{:%A %d %B %Y}"
+  }
 }

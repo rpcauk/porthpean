@@ -1,0 +1,11 @@
+/* Login mirrors Hyprlock's typography, square field and Dark+ palette. */
+window { background: #1e1e1e; color: #d4d4d4; font-family: "DejaVu Sans Mono"; font-size: 12pt; }
+.clock { font-size: 48pt; }
+.date { font-size: 12pt; }
+entry { background: #252526; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 0; min-height: 46px; padding: 0 10px; box-shadow: none; }
+entry:focus-within { border-color: #007acc; }
+entry.username { background: transparent; border-color: transparent; font-size: 18pt; }
+entry.username:focus-within { border-color: #007acc; }
+button { background: #252526; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 0; padding: 8px 18px; box-shadow: none; }
+button:hover, button:focus { border-color: #007acc; background: #37373d; }
+.message { color: #f44747; font-size: 11pt; }

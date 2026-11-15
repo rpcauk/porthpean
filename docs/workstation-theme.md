@@ -6,11 +6,15 @@ This is workstation infrastructure, separate from the Porthpean application. App
 
 The desktop uses the VS Code Dark+ palette: background `#1e1e1e`, panels/fields `#252526`, text `#d4d4d4`, border `#3c3c3c`, focus `#007acc`, selection `#094771`. Foot includes the VS Code terminal ANSI palette. GTK 3/4 applications receive matching surfaces and a dark preference; applications that draw their own interfaces can require their own theme settings.
 
-The supplied JPEG is copied unchanged to `/usr/share/backgrounds/porthpean/diogenes.jpg`; swaybg fills the desktop with it. Hyprlock blurs and darkens that file at runtime. The boot menu, graphical drive unlock and ReGreet login instead use a plain dark background and square text fields. They share colours and visual language, but are distinct programs: rEFInd, Plymouth and greetd/ReGreet respectively. rEFInd's selectable entries are rendered as text-box images rather than OS logos. The menu defaults to Arch LTS after five seconds, retains Windows, and adds an Arch LTS recovery image.
+The supplied JPEG is copied unchanged to `/usr/share/backgrounds/porthpean/diogenes.jpg`; swaybg fills the desktop with it. Hyprlock blurs and darkens that file at runtime. The boot menu, graphical drive unlock and greetd login instead use a plain dark background and square text fields. They share colours and visual language, but are distinct programs: rEFInd, Plymouth and greetd with the Porthpean GTK login surface respectively. rEFInd's selectable entries are rendered as text-box images rather than OS logos. The menu defaults to Arch LTS after five seconds, retains Windows, and adds an Arch LTS recovery image.
 
 The old [arch-dotfiles](https://github.com/rpcauk/arch-dotfiles) informed the bottom bar, compact typography, square geometry, keyboard controls and lock-screen layout. Its old Nord palette, obsolete Hyprland settings, personal credentials and old Citrix connection configuration are not imported.
 
-Waybar has numbered workspaces on the left; network, audio, battery and clock on the right. No status glyphs or icon font is required. Fuzzel appears immediately above the bottom bar, with plain text results, a square border and blue selection. The lock screen shows the current user, password field, time/date, selected MPRIS source and Playing/Paused/Stopped state. It does not expose track titles or permit unauthenticated desktop access.
+Waybar has numbered workspaces on the left; network, audio, battery and clock on the right. Workspace numbers stay on the left, centered in their buttons; empty workspaces are hidden. Battery status is `B:75% ↓` while discharging, `↑` while charging and `=` when full/plugged in. Network status uses `E` for Ethernet and `W 75%` for Wi-Fi signal strength; hover shows the connection details. No icon font is required. Tofi provides a 30px-high, full-width, horizontal dmenu strip immediately above the 30px bottom bar. Its explicit screen offset ignores exclusive zones to avoid a double gap. Fuzzel remains only for the Citrix portal URL prompt. The lock screen shows the current user, password field, time/date, selected MPRIS source and Playing/Paused/Stopped state. It does not expose track titles or permit unauthenticated desktop access.
+
+The login surface uses the same 48pt clock, date, 18pt username and 360px square password field as the lockscreen, on a solid Dark+ background. It has text buttons for login, reboot and shutdown. The username is editable and initially defaults to the selected daily account. Greetd/PAM authenticates; the GUI handles repeated secret/visible prompts (including an OTP), clears submitted fields immediately and never logs credentials. Authentication failures cancel the pending session before retry. Only successful authentication can start `niri-session`. No autologin is configured. The greeter runs as `greeter`, never root. The plain surface replaces the session chooser; this workstation starts Niri.
+
+LibreWolf is installed from Arch Extra and used for browser shortcuts, web launchers, Citrix portal and the default HTTP/HTTPS/HTML handlers. Existing browser profiles are untouched. Tofi is installed individually through yay from the AUR.
 
 ## Shortcuts
 
@@ -18,16 +22,17 @@ Mod means the Windows/Super key.
 
 | Shortcut | Opens |
 | --- | --- |
+| Mod+F1 | Keybinding map |
 | Mod+Return | Foot terminal |
 | Mod+Space or Mod+D | Application launcher |
-| Mod+B | Firefox |
+| Mod+B | LibreWolf |
 | Mod+E | Thunderbird |
-| Mod+G | ChatGPT in Firefox |
+| Mod+G | ChatGPT in LibreWolf |
 | Mod+C | Dedicated Codex account terminal |
 | Mod+A | Dedicated Amp account terminal |
 | Mod+Shift+C | Codex web |
 | Mod+Shift+A | Amp website |
-| Mod+W | Workplace Citrix portal in Firefox; downloaded ICA sessions open the native client through XWayland |
+| Mod+W | Workplace Citrix portal in LibreWolf; downloaded ICA sessions open the native client through XWayland |
 | Mod+Shift+L | Lock session |
 | Media keys | Playback and volume |
 
@@ -41,7 +46,7 @@ Agent shortcuts ask for the root password through `su`, then drop privileges to 
 
 Citrix returned HTTP 403 during download verification in this development environment. The installer first tries the recipe's vendor download. If blocked, its terminal prompts ask for a local Citrix Linux x86_64 version 26.04.10.1 tarball. It checks the same pinned SHA-256 before substituting a local source; checksums are never disabled. A different release needs a new packaging review. The official download page is [Citrix Workspace for Linux](https://www.citrix.com/downloads/workspace-app/linux/workspace-app-for-linux-latest.html).
 
-Citrix is proprietary and is not officially supported on Arch/Wayland. The native ICA launcher forces X11 through Niri's xwayland-satellite. The standalone selfservice UI requires the removed WebKitGTK 4.0/libsoup 2 ABI. Rather than attempting obsolete-library builds, the launcher asks once for your HTTPS workplace portal, opens it in Firefox, and associates downloaded `.ica` files with the native client. The portal URL is saved privately under `~/.config/porthpean/citrix-portal`; no workplace address is committed. Arch's legacy WebKitGTK and libsoup package pages returned 404 during verification, so those packages are deliberately not dependencies. Test your organisation's authentication, certificate trust, ICA launch, clipboard and display scaling. No workplace address, credentials or certificate trust bypass is included. See [Citrix system requirements](https://docs.citrix.com/us/en/citrix-workspace-app-for-linux/system-requirements.html).
+Citrix is proprietary and is not officially supported on Arch/Wayland. The native ICA launcher forces X11 through Niri's xwayland-satellite. The standalone selfservice UI requires the removed WebKitGTK 4.0/libsoup 2 ABI. Rather than attempting obsolete-library builds, the launcher asks once for your HTTPS workplace portal, opens it in LibreWolf, and associates downloaded `.ica` files with the native client. The portal URL is saved privately under `~/.config/porthpean/citrix-portal`; no workplace address is committed. Arch's legacy WebKitGTK and libsoup package pages returned 404 during verification, so those packages are deliberately not dependencies. Test your organisation's authentication, certificate trust, ICA launch, clipboard and display scaling. No workplace address, credentials or certificate trust bypass is included. See [Citrix system requirements](https://docs.citrix.com/us/en/citrix-workspace-app-for-linux/system-requirements.html).
 
 ## Boot update safety and recovery
 
@@ -64,11 +69,11 @@ If present, also restore `BACKUP/plymouthd.conf` to `/etc/plymouth/plymouthd.con
 
 Run `workstation/arch/check` as root, then log out/reboot deliberately. Verify both boot choices, drive unlock with a mistyped passphrase then a correct one, graphical login with the daily account, wallpaper/bar/launcher placement, and lock/unlock before testing suspend. Confirm the bar and launcher on an external screen too. Check that agent shortcuts run as their dedicated users and that Citrix works against your workplace.
 
-Local automated checks cover configuration parsing, boot transformations/idempotence, preservation of encryption options and Windows menu entries, deterministic boot assets, package flow, permissions and shell/Ansible syntax. Niri/GTK rendering, Plymouth, firmware, suspend and Citrix connectivity require testing on the ThinkPad; they have not been exercised by the development machine.
+Local automated checks cover fragmented greetd socket framing, multi-step PAM conversation control, failure/cancellation, configuration parsing, boot transformations/idempotence, preservation of encryption options and Windows menu entries, deterministic boot assets, package flow, permissions and shell/Ansible syntax. Niri/GTK rendering, Plymouth, firmware, suspend and Citrix connectivity require testing on the ThinkPad; they have not been exercised by the development machine.
 
 ## Zsh, tmux and history
 
-The managed daily and agent accounts now use `/bin/zsh`. The shell files adapt Ryan's current Zsh/tmux setup: XDG directories, completion, Git aliases, Ctrl+Space tmux prefix, vi-style pane movement and resize bindings. macOS/Homebrew settings and personal cloud paths are omitted. Existing configuration files are backed up by Ansible before replacement. Root administration continues through the existing root login.
+The managed daily and agent accounts now use `/bin/zsh`. The shell files adapt Ryan's current Zsh/tmux setup: XDG directories, completion, Git aliases, Ctrl+Space tmux prefix, vi-style pane movement and resize bindings. The blue tmux status bar, session label on the left and blank right side are restored from the existing dotfiles; Linux terminal capabilities and Zsh defaults are retained. macOS/Homebrew settings and personal cloud paths are omitted. Existing configuration files are backed up by Ansible before replacement. Root administration continues through the existing root login.
 
 The prompt contains the directory, Git branch and `$` only. The dollar sign is white after success and red after failure. Fast Syntax Highlighting is installed through yay as AUR package `zsh-fast-syntax-highlighting`; its caches are private to the current account. It performs no first-run theme download. fzf uses the Dark+ palette.
 

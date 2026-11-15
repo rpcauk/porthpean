@@ -4,7 +4,6 @@ import importlib.util
 import json
 import pathlib
 import subprocess
-import tomllib
 import unittest
 
 BASE = pathlib.Path(__file__).resolve().parents[1]
@@ -47,7 +46,10 @@ class Appearance(unittest.TestCase):
         for name in ['fuzzel.ini','foot.ini','gtk-settings.ini']:
             config=configparser.ConfigParser(interpolation=None)
             config.read(files/name)
-        tomllib.loads((files/'regreet.toml').read_text())
+        self.assertIn('width = 100%', (files/'tofi.conf').read_text())
+        self.assertIn('margin-bottom = 30', (files/'tofi.conf').read_text())
+        self.assertTrue(bar['niri/workspaces']['hide-empty'])
+        self.assertEqual(bar['battery']['format-charging'], 'B:{capacity}% ↑')
 
     def test_assets_are_deterministic_and_wallpaper_is_jpeg(self):
         assets=list((BASE/'files/boot').glob('*.png'))
