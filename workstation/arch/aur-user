@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# External counterpart of aur_as_user for progress.py subprocesses.
+set -euo pipefail
+[[ $EUID == 0 && $# -ge 3 ]] || exit 1
+account=$1 directory=$2
+shift 2
+[[ $account =~ ^[a-z][a-z0-9_-]*$ && $account != root && $account != codex && $account != amp ]] || exit 1
+[[ $(id -u "$account") -ge 1000 && $(getent passwd "$account" | cut -d: -f6) == "/home/$account" ]] || exit 1
+exec runuser -u "$account" -- env -i HOME="/home/$account" USER="$account" LOGNAME="$account" SHELL=/bin/zsh TERM="${TERM:-linux}" XDG_CONFIG_HOME="/home/$account/.config" \
+  XDG_CACHE_HOME="/home/$account/.cache" XDG_STATE_HOME="/home/$account/.local/state" \
+  PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+  bash -c 'cd -- "$1"; shift; exec "$@"' aur "$directory" "$@"

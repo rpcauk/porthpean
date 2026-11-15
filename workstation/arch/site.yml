@@ -46,6 +46,7 @@
       - ttf-dejavu
       - git
       - tmux
+      - sudo
       - zsh
       - fzf
       - curl
@@ -96,6 +97,46 @@
         append: false
         password_lock: true
       loop: '{{ agent_users }}'
+    - name: Ensure sudo loads managed command rules
+      tags: [accounts]
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: '^\s*[@#]includedir\s+"?/etc/sudoers[.]d"?\s*$'
+        line: '@includedir /etc/sudoers.d'
+        owner: root
+        group: root
+        mode: '0440'
+        backup: true
+        validate: /usr/sbin/visudo -cf %s
+    - name: Allow daily package management and power controls with password authentication
+      tags: [accounts]
+      ansible.builtin.template:
+        src: files/daily-sudoers.j2
+        dest: /etc/sudoers.d/20-porthpean-daily
+        owner: root
+        group: root
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
+    - name: Remove interrupted installer sudo grant on boot
+      tags: [accounts]
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/porthpean-installer.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          r /etc/sudoers.d/zz-porthpean-install - - - -
+    - name: Validate complete sudo configuration
+      tags: [accounts]
+      ansible.builtin.command: /usr/sbin/visudo -c
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Verify effective daily package-management permission
+      tags: [accounts]
+      ansible.builtin.command:
+        argv: [sudo, '-l', '-U', '{{ daily_user }}', /usr/bin/pacman, '-Syu']
+      changed_when: false
+      when: not ansible_check_mode
     - name: Protect personal and agent homes
       tags: [accounts]
       ansible.builtin.file:
@@ -129,13 +170,6 @@
         name: '{{ item }}'
         shell: /bin/zsh
       loop: '{{ [daily_user] + agent_users }}'
-    - name: Install pinned fast syntax highlighting
-      tags: [shell]
-      ansible.builtin.git:
-        repo: https://github.com/zdharma-continuum/fast-syntax-highlighting.git
-        dest: /usr/share/zsh/plugins/fast-syntax-highlighting
-        version: 4672ad5dd9ad68a7effc1476d65afb7c584ce2b3
-        update: true
     - name: Install shared-history helper
       tags: [shell]
       ansible.builtin.copy:

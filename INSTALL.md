@@ -17,7 +17,7 @@ bash "$INSTALLER"
 
 Review the installer and repository in advance; the entry script prints the checkout revision. Do not pipe downloads directly into a shell; `main` is mutable, not a signed release.
 
-Whiptail dialogs ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Hidden whiptail boxes collect and confirm all installer passwords; secrets go to system tools through stdin, not command arguments or files. The daily and agent accounts have no sudo. Vendor CLI installation and authentication remain separate interactive steps.
+Whiptail dialogs ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Hidden whiptail boxes collect and confirm all installer passwords; secrets go to system tools through stdin, not command arguments or files. The daily account gets password-protected sudo for pacman and power controls; agent accounts have no sudo. Yay is installed automatically and runs as the daily user. Vendor CLI installation and authentication remain separate interactive steps.
 
 ## Scope
 

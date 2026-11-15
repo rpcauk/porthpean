@@ -29,7 +29,7 @@ if getent passwd "$daily_user" >/dev/null; then
   existing=true
   [[ $(id -u "$daily_user") -ge 1000 && $(getent passwd "$daily_user" | cut -d: -f6) == "/home/$daily_user" ]] || { echo 'Refusing to manage a system account or unexpected home'; exit 1; }
   for group in $(id -nG "$daily_user"); do
-    case "$group" in wheel|disk|docker|input) echo "Remove privileged group $group deliberately before continuing"; exit 1 ;; esac
+    case "$group" in disk|docker|input) echo "Remove privileged group $group deliberately before continuing"; exit 1 ;; esac
   done
   echo "Existing account $daily_user: home permissions and managed desktop files will be updated, with file backups."
 fi
@@ -48,7 +48,7 @@ for agent in "${agents[@]}"; do
     echo "Existing $agent account: will enforce locked password and no supplementary groups."
   fi
 done
-if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall packages (including Zsh, Thunderbird, proprietary Citrix Workspace and Zoom plugin 6.4.11), accounts, desktop and matching boot/unlock theme?"; then ui_cancel; fi
+if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall yay/AUR packages, Zsh, Thunderbird, Citrix and Zoom 6.4.11, desktop and boot/unlock theme?\n\nThe daily account gets password-protected sudo for pacman and power controls. Agent accounts get no sudo."; then ui_cancel; fi
 # Secrets stay briefly in non-exported local variables and go to chpasswd over stdin.
 if [[ $existing == false ]]; then
   useradd -m -U -s /bin/bash "$daily_user"
@@ -83,9 +83,13 @@ run_progress 'Installing desktop packages' bash "$base/install-packages" "${pack
 run_progress 'Checking firewall kernel support' modprobe nf_tables
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
-for stage in accounts shell desktop services validate; do
+export PORTHPEAN_DAILY_USER="$daily_user"
+for stage in accounts aur shell desktop services validate; do
   case "$stage" in
-    accounts) label='Configuring isolated agent accounts' ;;
+    accounts) label='Configuring accounts and daily sudo permissions' ;;
+    aur)
+      run_progress 'Installing yay and AUR shell packages' bash "$base/setup-yay"
+      continue ;;
     shell) label='Configuring Zsh, tmux and separate shell histories' ;;
     desktop) label='Configuring the daily desktop' ;;
     services) label='Configuring login, swap and firewall' ;;

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 022
+base=$(cd -- "$(dirname -- "$0")" && pwd)
+source "$base/aur.sh"
+aur_init
+bash "$base/install-packages" base-devel git sudo
+# As in LARBS, bootstrap the helper once with makepkg; subsequent AUR work uses yay.
+if ! pacman -Q yay >/dev/null 2>&1; then
+  bash "$base/install-packages" go
+  build=$(aur_new_build yay)
+  aur_as_user git clone https://aur.archlinux.org/yay.git "$build/source"
+  aur_as_user git -C "$build/source" checkout --detach a856562dc26bb1ea060e167983cd22ca6bcac9ec
+  aur_as_user bash -c 'cd "$1"; exec makepkg --cleanbuild --noconfirm' build "$build/source"
+  mapfile -t packages < <(find "$build/source" -maxdepth 1 -type f -name 'yay-13.1.0-1-x86_64.pkg.tar.zst')
+  [[ ${#packages[@]} == 1 ]] || { echo 'Expected the reviewed yay package.' >&2; exit 1; }
+  staging=$(mktemp -d /var/cache/pacman/pkg/porthpean-yay.XXXXXXXX)
+  chmod 0755 "$staging"
+  install -m 0644 -o root -g root "${packages[0]}" "$staging/yay.pkg.tar.zst"
+  [[ $(pacman -Qp "$staging/yay.pkg.tar.zst") == 'yay 13.1.0-1' ]] || exit 1
+  pacman -U --noconfirm "$staging/yay.pkg.tar.zst"
+fi
+# Migrate the earlier unmanaged plugin checkout so pacman can own these files.
+plugin=/usr/share/zsh/plugins/fast-syntax-highlighting
+plugin_backup=
+setup_cleanup() {
+  local status=$?
+  aur_cleanup
+  if [[ $status != 0 && -n $plugin_backup && ! -e $plugin ]]; then
+    mv -- "$plugin_backup/plugin" "$plugin"
+  fi
+  return "$status"
+}
+trap setup_cleanup EXIT
+if [[ -d $plugin && ! $(pacman -Q zsh-fast-syntax-highlighting 2>/dev/null || true) ]]; then
+  [[ -d $plugin/.git && $(git -C "$plugin" rev-parse HEAD) == 4672ad5dd9ad68a7effc1476d65afb7c584ce2b3 ]] || {
+    echo 'Unmanaged highlighting files differ from the earlier installer; review them before migration.' >&2; exit 1;
+  }
+  install -d -m 0700 /var/lib/porthpean
+  plugin_backup=$(mktemp -d /var/lib/porthpean/fsh-backup.XXXXXXXX)
+  mv -- "$plugin" "$plugin_backup/plugin"
+fi
+# Ensure ordinary AUR package installation goes through the helper, one at a time.
+aur_enable_install
+aur_yay -S --aur --needed --noconfirm zsh-fast-syntax-highlighting

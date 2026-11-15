@@ -1,0 +1,2 @@
+# Managed daily account only. Run yay normally: it invokes sudo pacman as needed.
+{{ daily_user }} ALL=(root) PASSWD: /usr/bin/pacman, /usr/bin/shutdown, /usr/bin/reboot "", /usr/bin/poweroff "", /usr/bin/halt "", /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /usr/bin/systemctl halt, /usr/bin/systemctl suspend

@@ -16,7 +16,7 @@ The reusable core handles accounts and convergence. The current profile specifie
 
 Ansible manages files/services with backups. Agent passwords are locked and supplementary groups removed; homes are private. Unselected existing agents are not deleted. `/etc/porthpean-workstation.json` records non-secret choices for `check`. Re-running can upgrade packages, so do so only in an approved maintenance window.
 
-`install-agent` is a separate unprivileged helper for reviewing/running each vendor installer. No agent daemon, SSH server, remote-control API, sudo rule, linger or unattended task is enabled. Vendor login is interactive under the corresponding account.
+`install-agent` is a separate unprivileged helper for reviewing/running each vendor installer. No agent daemon, SSH server, remote-control API, agent sudo rule, linger or unattended task is enabled. Vendor login is interactive under the corresponding account.
 
 Remaining machine-specific work: Secure Boot trust/signing automation, verified Restic destination/credentials/retention, Kanata keymap/device restrictions, remote access if wanted. This bootstrap does not claim those are completed.
 
@@ -42,4 +42,7 @@ Package-by-package installation now uses one persistent gauge across the package
 
 The desktop/bootstrap now includes the supplied wallpaper, text-only bottom bar, launcher above the bar, blurred Hyprlock screen, Thunderbird shortcuts, and matching rEFInd/Plymouth/ReGreet styling. Citrix Workspace uses a reviewed, pinned AUR build with a checksum-verified local archive fallback if its vendor blocks downloads. See [appearance, shortcuts, Citrix and recovery](../../docs/workstation-theme.md). Reapply from the installed system; no disk reinstall is involved.
 
-The separate `shell` stage installs the adapted Zsh/tmux configuration, private per-shell history, shared fzf history search, pinned Fast Syntax Highlighting, and the per-account Pyre launcher. A separate Zoom stage builds the checksum-pinned **6.4.11 (26350)** Citrix plugin as an unprivileged account, then applies `zoom.yml` to configure and check the virtual channel. See the [shell/history and Zoom details](../../docs/workstation-theme.md).
+The separate `shell` stage installs the adapted Zsh/tmux configuration, private per-shell history, shared fzf history search, AUR Fast Syntax Highlighting, and the per-account Pyre launcher. A separate Zoom stage builds the checksum-pinned **6.4.11 (26350)** Citrix plugin through yay as the daily account, then applies `zoom.yml` to configure and check the virtual channel. See the [shell/history and Zoom details](../../docs/workstation-theme.md).
+
+
+Yay is installed automatically before the shell stage. The daily account has a validated, password-protected sudo rule for pacman and power controls, while agent accounts have no sudo. All AUR builds run as the daily user; automated stages temporarily allow passwordless pacman and remove the grant on exit. See the [daily sudo/yay policy and migration notes](../../docs/workstation-theme.md).

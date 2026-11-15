@@ -3,24 +3,19 @@
 set -euo pipefail
 umask 022
 base=$(cd -- "$(dirname -- "$0")" && pwd)
+source "$base/aur.sh"
+aur_init
 [[ $EUID == 0 && $(uname -m) == x86_64 ]] || { echo 'Zoom setup requires root on x86_64 Arch.' >&2; exit 1; }
 pacman -Q icaclient >/dev/null
 version=6.4.11-2
 if [[ $(pacman -Q zoom-citrix-plugin-ms 2>/dev/null || true) != "zoom-citrix-plugin-ms $version" ]]; then
   # Official dependencies still use one package transaction at a time.
   bash "$base/install-packages" base-devel alsa-lib gtk3 libglvnd libpulse libx11 libxcb libxcomposite libxv libxkbcommon-x11 xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm krb5 gcc-libs
-  if ! id porthpean-build >/dev/null 2>&1; then
-    useradd --system --create-home --home-dir /var/lib/porthpean-build --shell /usr/bin/nologin porthpean-build
-  fi
-  build=$(mktemp -d /var/lib/porthpean-build/zoom.XXXXXXXX)
-  chown porthpean-build:porthpean-build "$build"
-  install -m 0644 -o porthpean-build -g porthpean-build "$base/files/zoom/PKGBUILD" "$build/PKGBUILD"
-  runuser -u porthpean-build -- bash -c 'cd "$1"; exec makepkg --cleanbuild --noconfirm' build "$build"
-  staging=$(mktemp -d /var/cache/pacman/pkg/porthpean-zoom.XXXXXXXX)
-  chmod 0755 "$staging"
-  install -m 0644 -o root -g root "$build/zoom-citrix-plugin-ms-$version-x86_64.pkg.tar.zst" "$staging/zoom.pkg.tar.zst"
-  [[ $(pacman -Qp "$staging/zoom.pkg.tar.zst") == "zoom-citrix-plugin-ms $version" ]] || exit 1
-  pacman -U --noconfirm "$staging/zoom.pkg.tar.zst"
+  build=$(aur_new_build zoom)
+  install -m 0644 -o "$daily" -g "$(id -gn "$daily")" "$base/files/zoom/PKGBUILD" "$build/PKGBUILD"
+  aur_enable_install
+  aur_yay -Bi --noconfirm "$build"
+  [[ $(pacman -Q zoom-citrix-plugin-ms) == "zoom-citrix-plugin-ms $version" ]] || exit 1
 fi
 # Always repair integration: upgrading Citrix can replace its module.ini.
 ansible-playbook -i localhost, -c local "$base/zoom.yml"

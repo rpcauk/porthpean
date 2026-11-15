@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Root orchestrates; a dedicated unprivileged account builds the pinned AUR recipe.
+# Root orchestrates; yay builds and installs as the sudo-enabled daily account.
 set -euo pipefail
 [[ $EUID == 0 && -f /etc/arch-release ]] || { echo 'Run on installed Arch as root.' >&2; exit 1; }
 base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$base/ui.sh"
+source "$base/aur.sh"
+aur_init
 revision=77eafb5fd43e2b377b2289864e5cc0298b9464f6
 version=26.04.10.1-1
 if [[ $(pacman -Q icaclient 2>/dev/null || true) == "icaclient $version" ]]; then exit 0; fi
@@ -11,47 +13,39 @@ if [[ $(pacman -Q icaclient 2>/dev/null || true) == "icaclient $version" ]]; the
 run_progress 'Installing Citrix build tools and dependencies' bash "$base/install-packages" \
   base-devel alsa-lib curl gst-plugins-base-libs libc++ libc++abi libsecret \
   libvorbis libxaw libxml2-legacy libxp openssl speex
-if ! getent passwd porthpean-build >/dev/null; then
-  useradd --system --user-group --create-home --home-dir /var/lib/porthpean-build --shell /usr/bin/nologin porthpean-build
-fi
-[[ $(getent passwd porthpean-build | cut -d: -f6) == /var/lib/porthpean-build ]] || exit 1
-[[ $(id -Gn porthpean-build) == porthpean-build ]] || exit 1
-build=$(mktemp -d /var/lib/porthpean-build/citrix.XXXXXXXX)
-chown porthpean-build:porthpean-build "$build"
-run_progress 'Fetching reviewed Citrix packaging' runuser -u porthpean-build -- git clone https://aur.archlinux.org/icaclient.git "$build/source"
-run_progress 'Selecting reviewed Citrix revision' runuser -u porthpean-build -- git -C "$build/source" checkout --detach "$revision"
-[[ $(runuser -u porthpean-build -- git -C "$build/source" rev-parse HEAD) == "$revision" ]] || exit 1
+build=$(aur_new_build citrix)
+run_progress 'Fetching Citrix recipe with yay' bash "$base/aur-user" "$daily" "$build" /usr/bin/yay -G icaclient
+# yay -G creates the package-name directory.
+aur_as_user mv "$build/icaclient" "$build/source"
+run_progress 'Selecting reviewed Citrix revision' bash "$base/aur-user" "$daily" "$build/source" git -C "$build/source" checkout --detach "$revision"
+[[ $(aur_as_user git -C "$build/source" rev-parse HEAD) == "$revision" ]] || exit 1
 # Keep the reviewed recipe and checksums, but select its VERSIONED vendor page.
-runuser -u porthpean-build -- cp "$build/source/PKGBUILD" "$build/source/PKGBUILD.reviewed"
-install -m 0644 -o porthpean-build -g porthpean-build "$base/citrix-source.py" "$build/citrix-source.py"
-runuser -u porthpean-build -- python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD"
+aur_as_user cp "$build/source/PKGBUILD" "$build/source/PKGBUILD.reviewed"
+install -m 0644 -o "$daily" -g "$(id -gn "$daily")" "$base/citrix-source.py" "$build/citrix-source.py"
+aur_as_user python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD"
 # The vendor normally supplies short-lived signed download URLs via the recipe.
 # If blocked, use an explicitly selected vendor archive and the SAME pinned checksum.
-if ! run_progress 'Downloading and checking Citrix source' runuser -u porthpean-build -- bash -c 'cd "$1"; exec makepkg --verifysource --noconfirm' verify "$build/source"; then
+if ! run_progress 'Downloading and checking Citrix source' bash "$base/aur-user" "$daily" "$build/source" bash -c 'cd "$1"; exec makepkg --verifysource --noconfirm' verify "$build/source"; then
   whiptail --title 'Citrix source verification failed' --msgbox "Downloading or verifying Citrix failed. The preceding error is in the setup log: ${install_log:-terminal output}. This can be an HTTP error, missing link, network failure or checksum mismatch.\n\nFor the local fallback, open this exact version's page in your browser:\nhttps://www.citrix.com/downloads/workspace-app/legacy-workspace-app-for-linux/workspace-app-for-linux-2604-10.html\n\nChoose the Linux x86_64 TARBALL for 2604.10 (26.04.10.1), not the newer latest release. The existing SHA-256 check still applies." 21 78
   archive=$(ui_input 'Citrix vendor archive' 'Full path to linuxx64-gcc-8-26.04.10.1.tar.gz:' "/home/${PORTHPEAN_DAILY_USER:-ryan}/Downloads/linuxx64-gcc-8-26.04.10.1.tar.gz") || exit 1
   [[ -f $archive ]] || { echo 'Archive does not exist.' >&2; exit 1; }
   expected=8c0a22cad4a4cda802cb5d3bb09b89779d20f68ba5e454b86485354c557356b5
   [[ $(sha256sum -- "$archive" | cut -d ' ' -f1) == "$expected" ]] || { echo 'Citrix archive checksum does not match the reviewed release.' >&2; exit 1; }
-  install -m 0600 -o porthpean-build -g porthpean-build "$archive" "$build/source/icaclient-x64-26.04.10.1.tar.gz"
-  runuser -u porthpean-build -- python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD" --local
+  install -m 0600 -o "$daily" -g "$(id -gn "$daily")" "$archive" "$build/source/icaclient-x64-26.04.10.1.tar.gz"
+  aur_as_user python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD" --local
 fi
-# makepkg checks the pinned tarball checksum. No sudo, --syncdeps or root vendor script.
-run_progress 'Building Citrix Workspace package' runuser -u porthpean-build -- bash -c 'cd "$1"; exec makepkg --cleanbuild --noconfirm' build "$build/source"
-mapfile -t built < <(find "$build/source" -maxdepth 1 -type f -name "icaclient-$version-x86_64.pkg.tar.zst")
-[[ ${#built[@]} == 1 ]] || { echo 'Expected one Citrix package; build retained for inspection.' >&2; exit 1; }
-# Freeze the artifact in root-owned storage before pacman reads it.
-staging=$(mktemp -d /var/cache/pacman/pkg/porthpean-citrix.XXXXXXXX)
-chmod 0755 "$staging"
-install -m 0644 -o root -g root "${built[0]}" "$staging/icaclient.pkg.tar.zst"
-[[ $(pacman -Qp "$staging/icaclient.pkg.tar.zst") == "icaclient $version" ]] || exit 1
-run_progress 'Installing Citrix Workspace' pacman -U --noconfirm "$staging/icaclient.pkg.tar.zst"
+# Let yay regenerate metadata for the patched recipe and install it through sudo pacman.
+aur_as_user rm -f "$build/source/.SRCINFO"
+aur_enable_install
+run_progress 'Installing Citrix Workspace with yay' bash "$base/aur-user" "$daily" "$build/source" \
+  /usr/bin/yay -Bi --noconfirm --sudobin /usr/bin/sudo --sudoflags=-n --nosudoloop "$build/source"
+[[ $(pacman -Q icaclient) == "icaclient $version" ]] || exit 1
 # Vendor services are not enabled, and security/USB/app-protection components aren't added.
 printf 'Citrix Workspace installed. Packaging revision: %s\n' "$revision"
 # Prepare only the daily account's private ICA settings; never import old credentials.
 config=/etc/porthpean-workstation.json
 # During initial setup this file may not yet exist; bootstrap passes the chosen name.
-daily=${PORTHPEAN_DAILY_USER:-}
+daily=${PORTHPEAN_DAILY_USER:-$daily}
 if [[ -n $daily && $daily =~ ^[a-z][a-z0-9_-]*$ && $(id -u "$daily") -ge 1000 ]]; then
   install -d -m 0700 -o "$daily" -g "$daily" "/home/$daily/.ICAClient" "/home/$daily/.ICAClient/cache"
   for file in All_Regions Trusted_Region Unknown_Region canonicalization regions; do

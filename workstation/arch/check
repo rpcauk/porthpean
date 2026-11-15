@@ -24,7 +24,9 @@ for account in "$daily_user" "${agent_users[@]}"; do
 done
 for account in "$daily_user" "${agent_users[@]}"; do
   groups=$(id -nG "$account")
-  if [[ " $groups " =~ \ (wheel|disk|docker|input)\  ]]; then
+  forbidden="disk|docker|input"
+  [[ $account == "$daily_user" ]] || forbidden="wheel|$forbidden"
+  if [[ " $groups " =~ \ ($forbidden)\  ]]; then
     echo "FAIL: $account has a privileged group"; failed=1
   fi
 done
@@ -38,7 +40,17 @@ for path in /usr/share/backgrounds/porthpean/diogenes.jpg /etc/greetd/dark-plus.
   [[ -s $path ]] || { echo "FAIL: missing theme file $path"; failed=1; }
 done
 runuser -u greeter -- test -r /etc/greetd/dark-plus.css || failed=1
-pacman -Q thunderbird hyprlock greetd-regreet plymouth icaclient zsh fzf tmux zoom-citrix-plugin-ms || failed=1
+visudo -c || failed=1
+[[ ! -e /etc/sudoers.d/zz-porthpean-install ]] || { echo "FAIL: temporary installer sudo grant remains"; failed=1; }
+[[ $(stat -c '%a:%U' /etc/sudoers.d/20-porthpean-daily) == 440:root ]] || failed=1
+sudo -l -U "$daily_user" /usr/bin/pacman -Syu || failed=1
+sudo -l -U "$daily_user" /usr/bin/systemctl reboot || failed=1
+for account in "${agent_users[@]}"; do
+  if sudo -l -U "$account" /usr/bin/pacman -Syu >/dev/null 2>&1; then
+    echo "FAIL: $account has package-management sudo access"; failed=1
+  fi
+done
+pacman -Q yay sudo zsh-fast-syntax-highlighting thunderbird hyprlock greetd-regreet plymouth icaclient zsh fzf tmux zoom-citrix-plugin-ms || failed=1
 [[ $(head -n 1 /usr/lib/zoomvdi-universal-plugin/version.txt) == 6.4.11.26350 ]] || failed=1
 [[ $(readlink /opt/Citrix/ICAClient/ZoomMedia.so) == /usr/lib/zoomvdi-universal-plugin/libZoomPlugin.so ]] || failed=1
 systemctl is-enabled NetworkManager greetd nftables || failed=1

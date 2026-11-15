@@ -255,7 +255,7 @@ Set the root password for local administration. The bootstrap will later create 
 passwd root
 ```
 
-The daily account stays unprivileged. Use a local root login or `su -` with the root password for maintenance. No passwordless sudo rule is installed.
+After workstation bootstrap, the daily account has password-protected sudo for pacman and power controls, and yay is installed for AUR packages. Use `su -` for other root maintenance. Temporary passwordless pacman access exists only during automated AUR stages and is cleaned up afterward. Agent accounts remain unprivileged.
 
 ## 7. Build UKIs and install Linux-owned boot files
 
@@ -365,7 +365,7 @@ The script creates the daily account, performs a complete official repository up
 
 Offline transfer is still possible: copy the reviewed `workstation/arch/` directory from the Mac to a second ordinary USB, transfer it to a root-owned directory on Arch and run `bash bootstrap` there. Do not run unreviewed root scripts from a directory writable by another account.
 
-After successful bootstrap, use the whiptail reboot choice. As root, check `id ryan`: the daily account must not belong to privileged groups such as wheel, disk or docker. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
+After successful bootstrap, use the whiptail reboot choice. As root, check `id ryan`: the daily account receives its sudo permissions through a named rule, with no wheel membership required; disk and docker group access remain disallowed. At greetd log in as `ryan`. Keys: Super+Enter terminal, Super+D launcher, Super+L lock, Super+Q close, Super+Shift+E exit, Super+H/J/K/semicolon navigation. Keyboard layout is GB. The desktop uses `niri-session` for systemd session integration. PipeWire/WirePlumber use their packaged user activation; do not enable duplicate system-wide audio services.
 
 The firewall file is a fresh standalone workstation ruleset and replaces any prior nftables file with a backup. It denies unsolicited inbound traffic including SSH; later Tailscale/container/network integration needs its own reviewed policy. Use this bootstrap on this fresh base, not on an already network-managed server.
 
