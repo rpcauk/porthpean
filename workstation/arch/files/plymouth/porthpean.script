@@ -1,0 +1,43 @@
+Window.SetBackgroundTopColor(0.1176, 0.1176, 0.1176);
+Window.SetBackgroundBottomColor(0.1176, 0.1176, 0.1176);
+label.image = Image.Text("t480s", 0.831, 0.831, 0.831, 1, "DejaVu Sans Mono 18");
+label.sprite = Sprite(label.image);
+label.sprite.SetX(Window.GetWidth() / 2 - label.image.GetWidth() / 2);
+label.sprite.SetY(Window.GetHeight() / 2 - 100);
+field.image = Image("field.png");
+field.sprite = Sprite(field.image);
+field.sprite.SetX(Window.GetWidth() / 2 - 180);
+field.sprite.SetY(Window.GetHeight() / 2 - 24);
+field.sprite.SetOpacity(0);
+password.sprite = Sprite();
+message.sprite = Sprite();
+fun display_password(prompt, bullets) {
+    field.sprite.SetOpacity(1);
+    mask = "";
+    for (i = 0; i < bullets && i < 32; i++) mask += "*";
+    password.image = Image.Text(mask, 0.831, 0.831, 0.831, 1, "DejaVu Sans Mono 14");
+    password.sprite.SetImage(password.image);
+    password.sprite.SetX(Window.GetWidth() / 2 - password.image.GetWidth() / 2);
+    password.sprite.SetY(Window.GetHeight() / 2 - password.image.GetHeight() / 2);
+    password.sprite.SetOpacity(1);
+    message.image = Image.Text("Unlock encrypted drive", 0.831, 0.831, 0.831, 1, "DejaVu Sans Mono 12");
+    message.sprite.SetImage(message.image);
+    message.sprite.SetX(Window.GetWidth() / 2 - message.image.GetWidth() / 2);
+    message.sprite.SetY(Window.GetHeight() / 2 + 45);
+    message.sprite.SetOpacity(1);
+}
+fun display_normal() {
+    field.sprite.SetOpacity(0);
+    password.sprite.SetOpacity(0);
+    message.sprite.SetOpacity(0);
+}
+fun display_message(text) {
+    message.image = Image.Text(text, 0.831, 0.831, 0.831, 1, "DejaVu Sans Mono 12");
+    message.sprite.SetImage(message.image);
+    message.sprite.SetX(Window.GetWidth() / 2 - message.image.GetWidth() / 2);
+    message.sprite.SetY(Window.GetHeight() / 2 + 45);
+    message.sprite.SetOpacity(1);
+}
+Plymouth.SetDisplayPasswordFunction(display_password);
+Plymouth.SetDisplayNormalFunction(display_normal);
+Plymouth.SetMessageFunction(display_message);

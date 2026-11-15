@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case ${1:-} in codex|amp) agent=$1 ;; *) exit 2 ;; esac
+# Daily users stay unprivileged. su asks for the root password, then drops to the agent.
+exec foot --title "$agent agent — root authentication" su - root -c \
+  "runuser -l $agent -c /usr/local/bin/porthpean-agent-session"

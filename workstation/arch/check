@@ -32,6 +32,11 @@ done
 for file in /efi/EFI/Linux/arch-lts.efi /efi/EFI/Linux/arch-linux.efi; do
   [[ -s $file ]] || { echo "FAIL: missing $file"; failed=1; }
 done
+for path in /usr/share/backgrounds/porthpean/diogenes.jpg /etc/greetd/dark-plus.css /etc/greetd/regreet.toml /efi/EFI/refind/themes/porthpean/theme.conf /efi/EFI/Linux/arch-lts-recovery.efi; do
+  [[ -s $path ]] || { echo "FAIL: missing theme file $path"; failed=1; }
+done
+runuser -u greeter -- test -r /etc/greetd/dark-plus.css || failed=1
+pacman -Q thunderbird hyprlock greetd-regreet plymouth icaclient || failed=1
 systemctl is-enabled NetworkManager greetd nftables || failed=1
 systemctl --failed --no-pager
 nft --check --file /etc/nftables.conf || failed=1

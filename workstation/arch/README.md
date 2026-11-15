@@ -37,3 +37,7 @@ Desktop provisioning performs one approved complete system upgrade, then install
 The progress display contains short stage/package labels, elapsed time and real percentages rather than raw CLI output. Detailed output remains in the private error log. All progress subprocesses use `C.UTF-8`, including Ansible; the bootstrap checks UTF-8 before provisioning. This fixes the earlier runner's forced `LC_ALL=C`.
 
 Package-by-package installation now uses one persistent gauge across the package list, retains the real console TERM instead of forcing xterm, and limits progress redraws. Kernel upgrades that remove the running kernel's module tree cause a reboot checkpoint before continuing. Provisioning explicitly loads `nf_tables` before firewall validation and still refuses to enable the firewall if validation fails.
+
+## Dark+ appearance update
+
+The desktop/bootstrap now includes the supplied wallpaper, text-only bottom bar, launcher above the bar, blurred Hyprlock screen, Thunderbird shortcuts, and matching rEFInd/Plymouth/ReGreet styling. Citrix Workspace uses a reviewed, pinned AUR build with a checksum-verified local archive fallback if its vendor blocks downloads. See [appearance, shortcuts, Citrix and recovery](../../docs/workstation-theme.md). Reapply from the installed system; no disk reinstall is involved.

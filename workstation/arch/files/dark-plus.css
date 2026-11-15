@@ -1,0 +1,20 @@
+/* Shared Dark+ surface and square input boxes. */
+@define-color theme_bg_color #1e1e1e;
+@define-color theme_fg_color #d4d4d4;
+@define-color theme_base_color #252526;
+@define-color theme_text_color #d4d4d4;
+@define-color theme_selected_bg_color #094771;
+@define-color theme_selected_fg_color #ffffff;
+@define-color accent_bg_color #007acc;
+@define-color accent_fg_color #ffffff;
+@define-color window_bg_color #1e1e1e;
+@define-color window_fg_color #d4d4d4;
+@define-color view_bg_color #252526;
+@define-color view_fg_color #d4d4d4;
+window, .background { background-color: #1e1e1e; color: #d4d4d4; }
+entry, textview, .view { background-color: #252526; color: #d4d4d4; border-radius: 0; }
+entry { border: 1px solid #3c3c3c; min-height: 36px; padding: 0 10px; box-shadow: none; }
+entry:focus { border-color: #007acc; }
+button { background: #252526; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 0; box-shadow: none; }
+button:hover, button:focus { background: #37373d; border-color: #007acc; }
+button.suggested-action { background: #007acc; color: white; }

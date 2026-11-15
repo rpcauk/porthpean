@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Installed-system-only: preserve recovery UKIs and restore boot files on build failure.
+set -euo pipefail
+[[ $EUID == 0 && -f /etc/arch-release && ! -d /run/archiso ]] || exit 1
+base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+mountpoint -q /efi || { echo 'Mount the Linux ESP at /efi first.' >&2; exit 1; }
+[[ -s /etc/kernel/cmdline && -s /efi/EFI/refind/refind.conf ]] || exit 1
+for flag in /sys/firmware/efi/efivars/SecureBoot-*; do
+  [[ -f $flag ]] || continue
+  [[ $(od -An -t u1 -j4 -N1 "$flag" | tr -d ' ') != 1 ]] || { echo 'Secure Boot enabled: integrate signing before rebuilding UKIs.' >&2; exit 1; }
+done
+python3 - <<'SPACE'
+from pathlib import Path
+import shutil
+required=3*sum((Path('/efi/EFI/Linux') / (name+'.efi')).stat().st_size for name in ('arch-lts','arch-linux'))+64*1024*1024
+if shutil.disk_usage('/efi').free < required:
+    raise SystemExit('Insufficient free space on Linux ESP for safe UKI rebuild and recovery copies')
+SPACE
+backup=$(mktemp -d /root/porthpean-boot-backup.XXXXXXXX)
+cp -a /etc/mkinitcpio.conf /etc/kernel/cmdline /etc/plymouth/plymouthd.conf "$backup/" 2>/dev/null || {
+  cp -a /etc/mkinitcpio.conf /etc/kernel/cmdline "$backup/"
+}
+cp -a /efi/EFI/refind/refind.conf "$backup/refind.conf"
+for kernel in arch-lts arch-linux; do
+  [[ -s /efi/EFI/Linux/$kernel.efi ]] || exit 1
+  cp /efi/EFI/Linux/$kernel.efi "$backup/$kernel.efi"
+  cp /efi/EFI/Linux/$kernel.efi "/efi/EFI/Linux/$kernel-recovery.efi"
+done
+restore_on_error() {
+  status=$?
+  trap - ERR
+  set +e
+  restored=true
+  cp "$backup/mkinitcpio.conf" /etc/mkinitcpio.conf || restored=false
+  cp "$backup/cmdline" /etc/kernel/cmdline || restored=false
+  if [[ -f $backup/plymouthd.conf ]]; then cp "$backup/plymouthd.conf" /etc/plymouth/plymouthd.conf || restored=false;
+  else rm -f /etc/plymouth/plymouthd.conf || restored=false; fi
+  for kernel in arch-lts arch-linux; do cp "$backup/$kernel.efi" "/efi/EFI/Linux/$kernel.efi" || restored=false; done
+  cp "$backup/refind.conf" /efi/EFI/refind/refind.conf || restored=false
+  if [[ $restored == true ]]; then echo "Boot appearance failed; previous configuration/images restored. Backup: $backup" >&2;
+  else echo "Boot appearance AND restoration failed; use recovery media. Backup: $backup" >&2; fi
+  exit "$status"
+}
+trap restore_on_error ERR
+# No secrets in these files; the cryptroot UUID/options are preserved.
+python3 "$base/appearance.py" kernel
+install -d -m 0755 /usr/share/plymouth/themes/porthpean
+install -m 0644 "$base/files/plymouth/"* /usr/share/plymouth/themes/porthpean/
+plymouth-set-default-theme porthpean
+mkinitcpio -P
+for kernel in arch-lts arch-linux; do [[ -s /efi/EFI/Linux/$kernel.efi ]]; done
+mkdir -p /efi/EFI/refind/themes/porthpean
+cp "$base/files/boot/"*.png "$base/files/boot/theme.conf" /efi/EFI/refind/themes/porthpean/
+python3 "$base/appearance.py" menu
+# Preserve the menu's own fallback path and its relative theme assets.
+mkdir -p /efi/EFI/BOOT/themes/porthpean
+cp /efi/EFI/refind/themes/porthpean/* /efi/EFI/BOOT/themes/porthpean/
+cp /efi/EFI/refind/refind.conf /efi/EFI/BOOT/refind.conf
+trap - ERR
+printf 'Boot appearance ready. Recovery UKI retained; backup: %s\n' "$backup"

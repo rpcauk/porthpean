@@ -1,6 +1,10 @@
 {
-  "layer": "top",
+  "layer": "top", "position": "bottom", "height": 30, "spacing": 0,
   "modules-left": ["niri/workspaces"],
   "modules-right": ["network", "pulseaudio", "battery", "clock"],
-  "clock": {"format": "{:%a %d %b %H:%M}"}
+  "niri/workspaces": {"format": "{index}", "disable-scroll": true},
+  "network": {"format-wifi": "wifi {signalStrength}%", "format-ethernet": "wired", "format-disconnected": "offline", "tooltip-format": "{ifname}: {ipaddr}", "on-click": "foot nmcli device status"},
+  "pulseaudio": {"format": "vol {volume}%", "format-muted": "muted", "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", "scroll-step": 5},
+  "battery": {"format": "bat {capacity}%", "format-charging": "charging {capacity}%", "format-full": "full", "states": {"warning": 20, "critical": 10}},
+  "clock": {"format": "{:%H:%M  %a %d %b}", "tooltip-format": "{:%A %d %B %Y}"}
 }

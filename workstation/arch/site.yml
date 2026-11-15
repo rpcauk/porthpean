@@ -18,6 +18,14 @@
       - wireplumber
       - greetd
       - greetd-tuigreet
+      - greetd-regreet
+      - cage
+      - plymouth
+      - swaybg
+      - hyprlock
+      - playerctl
+      - thunderbird
+      - xdg-utils
       - xdg-desktop-portal-gnome
       - xdg-desktop-portal-gtk
       - xwayland-satellite
@@ -121,7 +129,7 @@
         owner: '{{ daily_user }}'
         group: '{{ daily_user }}'
         mode: '0700'
-      loop: ['', niri, waybar, mako, foot]
+      loop: ['', niri, waybar, mako, foot, fuzzel, hypr, gtk-3.0, gtk-4.0]
     - name: Install managed desktop files (backs up existing files)
       tags: [desktop]
       ansible.builtin.copy:
@@ -135,6 +143,129 @@
         - {src: waybar.jsonc, dest: waybar/config.jsonc}
         - {src: mako.conf, dest: mako/config}
         - {src: foot.ini, dest: foot/foot.ini}
+        - {src: waybar.css, dest: waybar/style.css}
+        - {src: fuzzel.ini, dest: fuzzel/fuzzel.ini}
+        - {src: hyprlock.conf, dest: hypr/hyprlock.conf}
+        - {src: gtk-settings.ini, dest: gtk-3.0/settings.ini}
+        - {src: gtk-settings.ini, dest: gtk-4.0/settings.ini}
+        - {src: dark-plus.css, dest: gtk-3.0/gtk.css}
+        - {src: dark-plus.css, dest: gtk-4.0/gtk.css}
+    - name: Create shared wallpaper directory accessible to the session
+      tags: [desktop]
+      ansible.builtin.file:
+        path: /usr/share/backgrounds/porthpean
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Install supplied Diogenes wallpaper without modifying it
+      tags: [desktop]
+      ansible.builtin.copy:
+        src: files/wallpapers/diogenes.jpg
+        dest: /usr/share/backgrounds/porthpean/diogenes.jpg
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Install session helper programs
+      tags: [desktop]
+      ansible.builtin.copy:
+        src: 'files/{{ item }}'
+        dest: '/usr/local/bin/{{ item }}'
+        owner: root
+        group: root
+        mode: '0755'
+      loop: [porthpean-lock, porthpean-media, porthpean-agent, porthpean-agent-session, porthpean-citrix]
+    - name: Create user desktop-entry directories
+      tags: [desktop]
+      ansible.builtin.file:
+        path: '/home/{{ daily_user }}/{{ item }}'
+        state: directory
+        owner: '{{ daily_user }}'
+        group: '{{ daily_user }}'
+        mode: '0700'
+      loop: [.local, .local/share, .local/share/applications]
+    - name: Route Citrix launcher to the workplace web portal
+      tags: [desktop]
+      ansible.builtin.copy:
+        dest: '/home/{{ daily_user }}/.local/share/applications/citrix-workspace.desktop'
+        owner: '{{ daily_user }}'
+        group: '{{ daily_user }}'
+        mode: '0600'
+        backup: true
+        content: |
+          [Desktop Entry]
+          Type=Application
+          Name=Citrix Workspace
+          Exec=porthpean-citrix
+          Terminal=false
+          Categories=Network;
+    - name: Register native Citrix ICA file launcher
+      tags: [desktop]
+      ansible.builtin.copy:
+        dest: /usr/share/applications/porthpean-citrix-ica.desktop
+        mode: '0644'
+        content: |
+          [Desktop Entry]
+          Type=Application
+          Name=Citrix ICA session
+          Exec=env GDK_BACKEND=x11 /opt/Citrix/ICAClient/wfica.sh %f
+          Terminal=false
+          NoDisplay=true
+          MimeType=application/x-ica;
+    - name: Associate downloaded ICA sessions with the native client
+      tags: [desktop]
+      ansible.builtin.command:
+        argv: [runuser, '-u', '{{ daily_user }}', '--', env, 'HOME=/home/{{ daily_user }}', 'XDG_CONFIG_HOME=/home/{{ daily_user }}/.config', xdg-mime, default, porthpean-citrix-ica.desktop, application/x-ica]
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Install the unprivileged agent installer
+      tags: [desktop]
+      ansible.builtin.copy:
+        src: '{{ item.src }}'
+        dest: '/usr/local/bin/{{ item.dest }}'
+        owner: root
+        group: root
+        mode: '{{ item.mode }}'
+      loop:
+        - {src: install-agent, dest: porthpean-install-agent, mode: '0755'}
+    - name: Create local web and agent launchers
+      tags: [desktop]
+      ansible.builtin.copy:
+        dest: '/usr/share/applications/porthpean-{{ item.id }}.desktop'
+        mode: '0644'
+        content: |
+          [Desktop Entry]
+          Type=Application
+          Name={{ item.name }}
+          Exec={{ item.exec }}
+          Terminal=false
+          Categories=Utility;
+      loop:
+        - {id: citrix, name: Citrix Workspace portal, exec: 'porthpean-citrix'}
+        - {id: chatgpt, name: ChatGPT, exec: 'firefox https://chatgpt.com/'}
+        - {id: codex, name: Codex agent, exec: 'porthpean-agent codex'}
+        - {id: amp, name: Amp agent, exec: 'porthpean-agent amp'}
+        - {id: codex-web, name: Codex web, exec: 'firefox https://chatgpt.com/codex'}
+        - {id: amp-web, name: Amp web, exec: 'firefox https://ampcode.com/'}
+    - name: Install graphical login palette and settings
+      tags: [services]
+      ansible.builtin.copy:
+        src: 'files/{{ item.src }}'
+        dest: '/etc/greetd/{{ item.dest }}'
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+      loop:
+        - {src: dark-plus.css, dest: dark-plus.css}
+        - {src: regreet.toml, dest: regreet.toml}
+    - name: Keep kernel logs in journal instead of over the login prompt
+      tags: [services]
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/20-quiet-console.conf
+        mode: '0644'
+        content: |
+          kernel.printk = 3 4 1 3
     - name: Render Niri configuration from the selected keyboard profile
       tags: [desktop]
       ansible.builtin.template:
@@ -160,7 +291,7 @@
           [terminal]
           vt = 1
           [default_session]
-          command = "tuigreet --time --cmd niri-session"
+          command = "env XKB_DEFAULT_LAYOUT={{ xkb_layout }} GTK_USE_PORTAL=0 GDK_DEBUG=no-portals dbus-run-session cage -s -- regreet --style /etc/greetd/dark-plus.css"
           user = "greeter"
     - name: Configure compressed RAM swap, no hibernation
       tags: [services]

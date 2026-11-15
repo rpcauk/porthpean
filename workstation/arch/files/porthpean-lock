@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+wait_for_lock=false
+if [[ ${1:-} == --wait ]]; then wait_for_lock=true; shift; fi
+if [[ $wait_for_lock == false ]]; then
+  pgrep -u "$(id -u)" -x hyprlock >/dev/null && exit 0
+  exec hyprlock --immediate-render "$@"
+fi
+# Before suspend, return after Niri reports that the session is locked.
+if ! pgrep -u "$(id -u)" -x hyprlock >/dev/null; then hyprlock --immediate-render "$@" & fi
+for ((attempt=0; attempt<40; attempt++)); do
+  [[ $(loginctl show-session "${XDG_SESSION_ID:-self}" -p LockedHint --value) != yes ]] || exit 0
+  sleep 0.1
+done
+echo 'Lock confirmation timed out; inspect the locker before relying on automatic suspend.' >&2
+exit 1

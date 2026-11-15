@@ -1,0 +1,12 @@
+skip_selection = false
+[GTK]
+application_prefer_dark_theme = true
+font_name = "DejaVu Sans Mono 12"
+theme_name = "Adwaita"
+[appearance]
+greeting_msg = "t480s"
+[widget.clock]
+format = "%H:%M  %A, %d %B"
+resolution = "1s"
+[env]
+XDG_SESSION_TYPE = "wayland"

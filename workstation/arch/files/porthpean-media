@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Display only the selected MPRIS source and playback state, never markup from titles."""
+import html
+import subprocess
+
+def player(*args):
+    result = subprocess.run(['playerctl', *args], capture_output=True, text=True, timeout=2)
+    return result.stdout.strip() if result.returncode == 0 else ''
+
+try:
+    sources = player('-l').splitlines()
+    if sources:
+        statuses = [(name, player('-p', name, 'status')) for name in sources]
+        source, status = next((pair for pair in statuses if pair[1] == 'Playing'), statuses[0])
+        print(html.escape(f'{source.split(".")[0]} | {status or "Stopped"}'))
+    else:
+        print('No media playing')
+except (OSError, subprocess.TimeoutExpired):
+    print('No media playing')

@@ -2,13 +2,38 @@ input {
     keyboard { xkb { layout "{{ xkb_layout }}"; }; };
     touchpad { tap; natural-scroll; };
 }
+prefer-no-csd
+layout {
+    gaps 8
+    background-color "#1e1e1e"
+    focus-ring {
+        width 1
+        active-color "#007acc"
+        inactive-color "#3c3c3c"
+    }
+    border { off; }
+}
+animations { off; }
+spawn-at-startup "swaybg" "-i" "/usr/share/backgrounds/porthpean/diogenes.jpg" "-m" "fill"
 spawn-at-startup "waybar"
 spawn-at-startup "mako"
-spawn-at-startup "swayidle" "-w" "timeout" "300" "swaylock -f" "before-sleep" "swaylock -f"
+spawn-at-startup "swayidle" "-w" "timeout" "300" "porthpean-lock" "before-sleep" "porthpean-lock --wait"
 binds {
     Mod+Return { spawn "foot"; }
     Mod+D { spawn "fuzzel"; }
-    Mod+L { spawn "swaylock" "-f"; }
+    Mod+Space { spawn "fuzzel"; }
+    Mod+B { spawn "firefox"; }
+    Mod+E { spawn "thunderbird"; }
+    Mod+G { spawn "firefox" "https://chatgpt.com/"; }
+    Mod+C { spawn "porthpean-agent" "codex"; }
+    Mod+A { spawn "porthpean-agent" "amp"; }
+    Mod+Shift+C { spawn "firefox" "https://chatgpt.com/codex"; }
+    Mod+Shift+A { spawn "firefox" "https://ampcode.com/"; }
+    Mod+W { spawn "porthpean-citrix"; }
+    XF86AudioPlay { spawn "playerctl" "play-pause"; }
+    XF86AudioNext { spawn "playerctl" "next"; }
+    XF86AudioPrev { spawn "playerctl" "previous"; }
+    Mod+Shift+L { spawn "porthpean-lock"; }
     Mod+Q { close-window; }
     Mod+H { focus-column-left; }
     Mod+J { focus-window-down; }

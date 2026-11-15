@@ -1,0 +1,7 @@
+[Plymouth Theme]
+Name=Porthpean Dark+
+Description=Plain dark background, text and a square passphrase field
+ModuleName=script
+[script]
+ImageDir=/usr/share/plymouth/themes/porthpean
+ScriptFile=/usr/share/plymouth/themes/porthpean/porthpean.script

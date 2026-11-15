@@ -48,7 +48,7 @@ for agent in "${agents[@]}"; do
     echo "Existing $agent account: will enforce locked password and no supplementary groups."
   fi
 done
-if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall packages, desktop and account configuration?"; then ui_cancel; fi
+if ! ui_yesno 'Set up workstation' "Daily account: $daily_user\nAI accounts: ${agents[*]:-(none)}\n\nInstall packages (including Thunderbird and proprietary Citrix Workspace), accounts, desktop and matching boot/unlock theme?"; then ui_cancel; fi
 # Secrets stay briefly in non-exported local variables and go to chpasswd over stdin.
 if [[ $existing == false ]]; then
   useradd -m -U -s /bin/bash "$daily_user"
@@ -83,7 +83,7 @@ run_progress 'Installing desktop packages' bash "$base/install-packages" "${pack
 run_progress 'Checking firewall kernel support' modprobe nf_tables
 # Only names/options are passed; no passwords, hashes or vendor credentials.
 vars=$(python -c 'import json,sys; print(json.dumps({"daily_user":sys.argv[1], "agent_users":sys.argv[2:]}))' "$daily_user" "${agents[@]}")
-for stage in accounts desktop services validate activate finalize; do
+for stage in accounts desktop services validate; do
   case "$stage" in
     accounts) label='Configuring isolated agent accounts' ;;
     desktop) label='Configuring the daily desktop' ;;
@@ -93,6 +93,14 @@ for stage in accounts desktop services validate activate finalize; do
     finalize) label='Recording completed setup' ;;
   esac
   run_progress "$label" ansible-playbook -i localhost, -c local "$base/site.yml" \
+    --tags "$stage" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
+done
+# These steps have their own logs/progress; no package code is built as root.
+export progress_helper install_log
+run_progress 'Applying matching boot and unlock appearance' bash "$base/setup-appearance"
+PORTHPEAN_DAILY_USER="$daily_user" bash "$base/install-citrix"
+for stage in activate finalize; do
+  run_progress "Finishing workstation: $stage" ansible-playbook -i localhost, -c local "$base/site.yml" \
     --tags "$stage" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
 done
 if ui_yesno 'Workstation ready' "Configuration applied. Log in as $daily_user after reboot.\n\nReboot now?"; then reboot; fi

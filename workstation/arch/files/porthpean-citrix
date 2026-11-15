@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+config=${XDG_CONFIG_HOME:-$HOME/.config}/porthpean
+if [[ -s $config/citrix-portal ]]; then
+  IFS= read -r portal < "$config/citrix-portal"
+else
+  portal=$(fuzzel --dmenu --lines=0 --prompt='Citrix portal URL > ' </dev/null) || exit 0
+  python3 - "$portal" <<'PY'
+import sys
+from urllib.parse import urlsplit
+url=urlsplit(sys.argv[1])
+if url.scheme!='https' or not url.hostname or url.username or url.password:
+    raise SystemExit('Enter an HTTPS workplace portal address without embedded credentials.')
+PY
+  mkdir -p "$config"
+  printf '%s\n' "$portal" > "$config/citrix-portal"
+fi
+# Use the supported browser-to-ICA workflow; do not require obsolete WebKitGTK 4.0.
+exec firefox --new-window "$portal"
