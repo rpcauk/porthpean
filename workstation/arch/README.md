@@ -26,7 +26,7 @@ During setup, whiptail shows the current stage and elapsed time. Package downloa
 
 ## Installer permission repairs and audit
 
-Both base installation and the desktop bootstrap enforce a shared, non-recursive policy for known system directories. This repairs early installations whose `/etc` or pacman cache parents were mode 0700. `/`, `/etc`, `/home`, `/var`, cache parents, `/var/log` and `/srv` use 0755; `/var/tmp` uses 1777; `/root`, snapshots and workstation state remain 0700. Private user homes and download child directories are never recursively changed. Unexpected owners and symlinks stop the repair. Pacman's actual `alpm` account must be able to traverse its cache before provisioning continues; downloading as root or disabling the sandbox is not a workaround.
+Both base installation and the desktop bootstrap enforce a shared policy for known system directories. Only public local package metadata is repaired recursively; public sync database files are handled directly (directories 0755, ordinary files 0644); symlinks are not followed and db.lck and private sync download directories are untouched. This repairs early installations whose `/etc` or pacman cache parents were mode 0700. `/`, `/etc`, `/home`, `/var`, cache parents, `/var/log` and `/srv` use 0755; `/var/tmp` uses 1777; `/root`, snapshots and workstation state remain 0700. Private user homes and download child directories are never recursively changed. Unexpected owners and symlinks stop the repair. Pacman's actual `alpm` account must be able to traverse its cache before provisioning continues; downloading as root or disabling the sandbox is not a workaround.
 
 The standalone base installer embeds the same permissions policy, checked for equality in tests. Progress commands disable systemd/Git/general pagers so a hidden pager cannot stall setup. The `check` script now fails on unexpected home/system modes, unavailable D-Bus/NetworkManager or inaccessible pacman cache.
 
@@ -46,3 +46,6 @@ The separate `shell` stage installs the adapted Zsh/tmux configuration, private 
 
 
 Yay is installed automatically before the shell stage. The daily account has a validated, password-protected sudo rule for pacman and power controls, while agent accounts have no sudo. All AUR builds run as the daily user; automated stages temporarily allow passwordless pacman and remove the grant on exit. See the [daily sudo/yay policy and migration notes](../../docs/workstation-theme.md).
+
+
+The pacman database repair includes `/var/lib`, `/var/lib/pacman`, `local` and `sync`; earlier versions repaired the download cache but omitted these paths. Bootstrap now tests both `pacman -Q` and `pacman -Sl` as the daily user before upgrades/AUR work, so inaccessible database metadata stops setup early. Tests preserve private cache children, locks, root files and symlink targets while repairing database metadata.

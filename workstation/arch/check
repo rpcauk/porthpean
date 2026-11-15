@@ -10,11 +10,13 @@ daily_user=$(jq -er '.daily_user' "$config")
 mapfile -t agent_users < <(jq -r '.agent_users[]' "$config")
 id root || failed=1
 [[ $(stat -c '%a:%U' /root) == 700:root ]] || { echo 'FAIL: /root permissions'; failed=1; }
-for path in / /etc /home /var /var/cache /var/cache/pacman /var/cache/pacman/pkg /var/log /srv; do
+for path in / /etc /home /var /var/lib /var/lib/pacman /var/lib/pacman/local /var/lib/pacman/sync /var/cache /var/cache/pacman /var/cache/pacman/pkg /var/log /srv; do
   [[ $(stat -c '%a:%U' "$path") == 755:root ]] || { echo "FAIL: system directory permissions: $path"; failed=1; }
 done
 [[ $(stat -c '%a:%U' /var/tmp) == 1777:root ]] || { echo 'FAIL: /var/tmp permissions'; failed=1; }
 runuser -u alpm -- test -x /var/cache/pacman/pkg || failed=1
+runuser -u "$daily_user" -- pacman -Q >/dev/null || failed=1
+runuser -u "$daily_user" -- pacman -Sl >/dev/null || failed=1
 systemctl is-active dbus NetworkManager || failed=1
 for account in "$daily_user" "${agent_users[@]}"; do
   id "$account" || failed=1
