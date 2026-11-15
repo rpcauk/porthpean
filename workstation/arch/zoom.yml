@@ -2,12 +2,15 @@
 - name: Configure the pinned Zoom plugin after Citrix installation
   hosts: all
   become: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Require installed Arch and root access
+      tags: [always]
       ansible.builtin.assert:
         that:
           - ansible_facts.distribution == 'Archlinux'
-          - ansible_facts.user_id == 'root'
+          - ansible_facts.effective_user_id == 0
     - name: Register Zoom virtual channel without overwriting other Citrix modules
       ansible.builtin.command:
         argv: [python3, '{{ playbook_dir }}/files/zoom/configure.py', /opt/Citrix/ICAClient/config/module.ini]
