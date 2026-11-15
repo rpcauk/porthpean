@@ -21,25 +21,20 @@ chown porthpean-build:porthpean-build "$build"
 run_progress 'Fetching reviewed Citrix packaging' runuser -u porthpean-build -- git clone https://aur.archlinux.org/icaclient.git "$build/source"
 run_progress 'Selecting reviewed Citrix revision' runuser -u porthpean-build -- git -C "$build/source" checkout --detach "$revision"
 [[ $(runuser -u porthpean-build -- git -C "$build/source" rev-parse HEAD) == "$revision" ]] || exit 1
+# Keep the reviewed recipe and checksums, but select its VERSIONED vendor page.
+runuser -u porthpean-build -- cp "$build/source/PKGBUILD" "$build/source/PKGBUILD.reviewed"
+install -m 0644 -o porthpean-build -g porthpean-build "$base/citrix-source.py" "$build/citrix-source.py"
+runuser -u porthpean-build -- python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD"
 # The vendor normally supplies short-lived signed download URLs via the recipe.
 # If blocked, use an explicitly selected vendor archive and the SAME pinned checksum.
 if ! run_progress 'Downloading and checking Citrix source' runuser -u porthpean-build -- bash -c 'cd "$1"; exec makepkg --verifysource --noconfirm' verify "$build/source"; then
-  whiptail --title 'Citrix download needs a local archive' --msgbox 'Citrix blocked automatic downloading. Download the Linux x86_64 tarball version 26.04.10.1 from Citrix in your browser. The next dialog asks for its full local path; its SHA-256 must match the reviewed release.' 13 76
+  whiptail --title 'Citrix source verification failed' --msgbox "Downloading or verifying Citrix failed. The preceding error is in the setup log: ${install_log:-terminal output}. This can be an HTTP error, missing link, network failure or checksum mismatch.\n\nFor the local fallback, open this exact version's page in your browser:\nhttps://www.citrix.com/downloads/workspace-app/legacy-workspace-app-for-linux/workspace-app-for-linux-2604-10.html\n\nChoose the Linux x86_64 TARBALL for 2604.10 (26.04.10.1), not the newer latest release. The existing SHA-256 check still applies." 21 78
   archive=$(ui_input 'Citrix vendor archive' 'Full path to linuxx64-gcc-8-26.04.10.1.tar.gz:' "/home/${PORTHPEAN_DAILY_USER:-ryan}/Downloads/linuxx64-gcc-8-26.04.10.1.tar.gz") || exit 1
   [[ -f $archive ]] || { echo 'Archive does not exist.' >&2; exit 1; }
   expected=8c0a22cad4a4cda802cb5d3bb09b89779d20f68ba5e454b86485354c557356b5
   [[ $(sha256sum -- "$archive" | cut -d ' ' -f1) == "$expected" ]] || { echo 'Citrix archive checksum does not match the reviewed release.' >&2; exit 1; }
   install -m 0600 -o porthpean-build -g porthpean-build "$archive" "$build/source/icaclient-x64-26.04.10.1.tar.gz"
-  runuser -u porthpean-build -- python3 - "$build/source/PKGBUILD" <<'PYTHON'
-from pathlib import Path
-import sys
-p=Path(sys.argv[1]);s=p.read_text()
-a=s.index('_dl_urls_=');b=s.index("source=('citrix-configmgr.desktop'",a)
-s=s[:a]+s[b:]
-s=s.replace('source_x86_64=("$pkgname-x64-$pkgver.tar.gz::$_source64")', 'source_x86_64=("$pkgname-x64-$pkgver.tar.gz")')
-s=s.replace('source_aarch64=("$pkgname-arm64-$pkgver.tar.gz::$_sourceaarch64")', 'source_aarch64=()')
-p.write_text(s)
-PYTHON
+  runuser -u porthpean-build -- python3 "$build/citrix-source.py" "$build/source/PKGBUILD.reviewed" "$build/source/PKGBUILD" --local
 fi
 # makepkg checks the pinned tarball checksum. No sudo, --syncdeps or root vendor script.
 run_progress 'Building Citrix Workspace package' runuser -u porthpean-build -- bash -c 'cd "$1"; exec makepkg --cleanbuild --noconfirm' build "$build/source"
