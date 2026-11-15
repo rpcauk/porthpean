@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Per-account shared history, separate from Zsh's per-shell history context."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import time
+
+
+def history_file(path):
+    path = Path(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    info = os.fstat(fd)
+    if info.st_uid != os.getuid() or not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise PermissionError('History must be an ordinary file owned by this user')
+    os.fchmod(fd, 0o600)
+    return os.fdopen(fd, 'r+', encoding='utf-8')
+
+
+def main():
+    mode, path = sys.argv[1:]
+    if mode not in ('append', 'list'):
+        raise ValueError('Expected append or list')
+    with history_file(path) as history:
+        fcntl.flock(history, fcntl.LOCK_EX if mode == 'append' else fcntl.LOCK_SH)
+        if mode == 'append':
+            command = sys.stdin.read().removesuffix('\n')
+            if not command.strip() or command.startswith(' '):
+                return
+            # Separate a partial record left by an interrupted writer.
+            history.seek(0, os.SEEK_END)
+            if history.tell():
+                history.seek(history.tell() - 1)
+                if history.read(1) != '\n':
+                    history.seek(0, os.SEEK_END)
+                    history.write('\n')
+            history.seek(0, os.SEEK_END)
+            history.write(json.dumps({'time': time.time(), 'command': command}, ensure_ascii=True) + '\n')
+            history.flush()
+        else:
+            records = []
+            for line in history:
+                try:
+                    command = json.loads(line)['command']
+                    if isinstance(command, str) and '\0' not in command:
+                        records.append(command)
+                except (ValueError, KeyError, TypeError):
+                    continue  # A partial final write must not break history search.
+            seen = set()
+            for command in reversed(records):
+                if command not in seen:
+                    sys.stdout.buffer.write(command.encode('utf-8') + b'\0')
+                    seen.add(command)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError) as error:
+        sys.exit(str(error))

@@ -18,6 +18,8 @@ runuser -u alpm -- test -x /var/cache/pacman/pkg || failed=1
 systemctl is-active dbus NetworkManager || failed=1
 for account in "$daily_user" "${agent_users[@]}"; do
   id "$account" || failed=1
+  [[ $(getent passwd "$account" | cut -d: -f7) == /bin/zsh ]] || { echo "FAIL: Zsh default for $account"; failed=1; }
+  runuser -u "$account" -- test -x "/home/$account/.local/bin/pyre" || failed=1
   [[ $(stat -c '%a:%U' "/home/$account") == "700:$account" ]] || { echo "FAIL: home permissions: $account"; failed=1; }
 done
 for account in "$daily_user" "${agent_users[@]}"; do
@@ -36,7 +38,9 @@ for path in /usr/share/backgrounds/porthpean/diogenes.jpg /etc/greetd/dark-plus.
   [[ -s $path ]] || { echo "FAIL: missing theme file $path"; failed=1; }
 done
 runuser -u greeter -- test -r /etc/greetd/dark-plus.css || failed=1
-pacman -Q thunderbird hyprlock greetd-regreet plymouth icaclient || failed=1
+pacman -Q thunderbird hyprlock greetd-regreet plymouth icaclient zsh fzf tmux zoom-citrix-plugin-ms || failed=1
+[[ $(head -n 1 /usr/lib/zoomvdi-universal-plugin/version.txt) == 6.4.11.26350 ]] || failed=1
+[[ $(readlink /opt/Citrix/ICAClient/ZoomMedia.so) == /usr/lib/zoomvdi-universal-plugin/libZoomPlugin.so ]] || failed=1
 systemctl is-enabled NetworkManager greetd nftables || failed=1
 systemctl --failed --no-pager
 nft --check --file /etc/nftables.conf || failed=1

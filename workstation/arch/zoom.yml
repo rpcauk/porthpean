@@ -1,0 +1,44 @@
+---
+- name: Configure the pinned Zoom plugin after Citrix installation
+  hosts: all
+  become: false
+  tasks:
+    - name: Require installed Arch and root access
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Archlinux'
+          - ansible_facts.user_id == 'root'
+    - name: Register Zoom virtual channel without overwriting other Citrix modules
+      ansible.builtin.command:
+        argv: [python3, '{{ playbook_dir }}/files/zoom/configure.py', /opt/Citrix/ICAClient/config/module.ini]
+      register: zoom_config
+      changed_when: (zoom_config.stdout | from_json).changed
+      when: not ansible_check_mode
+    - name: Link the native Zoom virtual driver
+      ansible.builtin.file:
+        src: /usr/lib/zoomvdi-universal-plugin/libZoomPlugin.so
+        dest: /opt/Citrix/ICAClient/ZoomMedia.so
+        state: link
+        owner: root
+        group: root
+    - name: Check the exact installed Zoom vendor version
+      ansible.builtin.command: head -n 1 /usr/lib/zoomvdi-universal-plugin/version.txt
+      register: zoom_version
+      changed_when: false
+      failed_when: zoom_version.stdout != '6.4.11.26350'
+      when: not ansible_check_mode
+    - name: Check native virtual-driver library dependencies
+      ansible.builtin.command: ldd /usr/lib/zoomvdi-universal-plugin/libZoomPlugin.so
+      register: zoom_libraries
+      changed_when: false
+      failed_when: zoom_libraries.rc != 0 or 'not found' in zoom_libraries.stdout
+      when: not ansible_check_mode
+    - name: Check Zoom media engine with its bundled libraries
+      ansible.builtin.command:
+        argv: [ldd, /usr/lib/zoomvdi-universal-plugin/zoom]
+      environment:
+        LD_LIBRARY_PATH: /usr/lib/zoomvdi-universal-plugin:/usr/lib/zoomvdi-universal-plugin/Qt/lib
+      register: zoom_engine_libraries
+      changed_when: false
+      failed_when: zoom_engine_libraries.rc != 0 or 'not found' in zoom_engine_libraries.stdout
+      when: not ansible_check_mode

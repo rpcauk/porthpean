@@ -1,0 +1,4 @@
+# Login settings adapted from the existing macOS profile for Arch.
+export EDITOR=nvim GIT_EDITOR=nvim PAGER=less
+unset LESSOPEN
+mkdir -p "$HOME/.local/bin" "$XDG_CACHE_HOME/zsh" "$XDG_STATE_HOME/zsh"

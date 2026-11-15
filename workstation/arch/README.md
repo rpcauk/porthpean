@@ -41,3 +41,5 @@ Package-by-package installation now uses one persistent gauge across the package
 ## Dark+ appearance update
 
 The desktop/bootstrap now includes the supplied wallpaper, text-only bottom bar, launcher above the bar, blurred Hyprlock screen, Thunderbird shortcuts, and matching rEFInd/Plymouth/ReGreet styling. Citrix Workspace uses a reviewed, pinned AUR build with a checksum-verified local archive fallback if its vendor blocks downloads. See [appearance, shortcuts, Citrix and recovery](../../docs/workstation-theme.md). Reapply from the installed system; no disk reinstall is involved.
+
+The separate `shell` stage installs the adapted Zsh/tmux configuration, private per-shell history, shared fzf history search, pinned Fast Syntax Highlighting, and the per-account Pyre launcher. A separate Zoom stage builds the checksum-pinned **6.4.11 (26350)** Citrix plugin as an unprivileged account, then applies `zoom.yml` to configure and check the virtual channel. See the [shell/history and Zoom details](../../docs/workstation-theme.md).

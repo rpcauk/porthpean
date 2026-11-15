@@ -1,0 +1,23 @@
+# Vendor RPM is unpacked by makepkg as an unprivileged account; no vendor scripts run.
+pkgname=zoom-citrix-plugin-ms
+pkgver=6.4.11
+pkgrel=2
+pkgdesc='Pinned Zoom VDI Citrix plugin 6.4.11 (26350)'
+arch=('x86_64')
+url='https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0063810'
+license=('custom')
+depends=('icaclient' 'alsa-lib' 'gtk3' 'libglvnd' 'libpulse' 'libx11' 'libxcb'
+         'libxcomposite' 'libxv' 'libxkbcommon-x11' 'xcb-util-image' 'xcb-util-keysyms'
+         'xcb-util-renderutil' 'xcb-util-wm' 'krb5' 'gcc-libs')
+conflicts=('zoomcitrixplugin')
+options=('!strip' '!debug')
+source=('https://zoom.us/download/vdi/6.4.11.26350/zoomvdi-universal-plugin-centos_6.4.11.rpm')
+sha512sums=('bcbd86d2392f04abedbefa2a9d7125068ddbaf0c4e5217384d6e6a06956f2fde9a2741ab6bcaf228d632033f6e045e028b29c6343f789f8059877ceedc6a011d')
+package() {
+  [[ $(head -n 1 "$srcdir/usr/lib/zoomvdi-universal-plugin/version.txt") == 6.4.11.26350 ]] || return 1
+  install -d "$pkgdir/usr/lib" "$pkgdir/etc/zoomvdi"
+  cp -a "$srcdir/usr/lib/zoomvdi-universal-plugin" "$pkgdir/usr/lib/"
+  install -m 0644 "$srcdir/etc/zoomvdi/ZoomMedia.ini" "$pkgdir/etc/zoomvdi/ZoomMedia.ini"
+  # No broad HID rule or auto-started management tool is installed.
+}
+backup=('etc/zoomvdi/ZoomMedia.ini')

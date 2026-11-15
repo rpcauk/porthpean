@@ -46,6 +46,8 @@
       - ttf-dejavu
       - git
       - tmux
+      - zsh
+      - fzf
       - curl
       - jq
       - ripgrep
@@ -88,7 +90,7 @@
       tags: [accounts]
       ansible.builtin.user:
         name: '{{ item }}'
-        shell: /bin/bash
+        shell: /bin/zsh
         create_home: true
         groups: ''
         append: false
@@ -121,6 +123,36 @@
         group: '{{ item }}'
         mode: '0600'
       loop: '{{ agent_users }}'
+    - name: Configure Zsh as the managed accounts' default shell
+      tags: [shell]
+      ansible.builtin.user:
+        name: '{{ item }}'
+        shell: /bin/zsh
+      loop: '{{ [daily_user] + agent_users }}'
+    - name: Install pinned fast syntax highlighting
+      tags: [shell]
+      ansible.builtin.git:
+        repo: https://github.com/zdharma-continuum/fast-syntax-highlighting.git
+        dest: /usr/share/zsh/plugins/fast-syntax-highlighting
+        version: 4672ad5dd9ad68a7effc1476d65afb7c584ce2b3
+        update: true
+    - name: Install shared-history helper
+      tags: [shell]
+      ansible.builtin.copy:
+        src: files/porthpean-shell-history
+        dest: /usr/local/bin/porthpean-shell-history
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Configure each account's private shell files
+      tags: [shell]
+      ansible.builtin.include_tasks:
+        file: shell.yml
+        apply:
+          tags: [shell]
+      loop: '{{ [daily_user] + agent_users }}'
+      loop_control:
+        loop_var: shell_user
     - name: Create user configuration directories
       tags: [desktop]
       ansible.builtin.file:

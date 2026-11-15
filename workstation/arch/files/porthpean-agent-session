@@ -7,4 +7,4 @@ if command -v "$agent" >/dev/null; then
   exec tmux new-session -A -s "$agent" "$agent"
 fi
 printf '%s CLI is not installed yet. Run porthpean-install-agent here, then authenticate as this account.\n' "$agent"
-exec bash -l
+exec zsh -l

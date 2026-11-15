@@ -1,0 +1,37 @@
+---
+- name: Create private shell directories
+  ansible.builtin.file:
+    path: '/home/{{ shell_user }}/{{ item }}'
+    state: directory
+    owner: '{{ shell_user }}'
+    group: '{{ shell_user }}'
+    mode: '0700'
+  loop: [.config, .config/zsh, .config/tmux, .local, .local/bin, .local/bin/lib, .local/state, .local/state/zsh, .cache, .cache/zsh]
+- name: Install Zsh environment (backup existing)
+  ansible.builtin.copy:
+    src: files/shell/zshenv
+    dest: '/home/{{ shell_user }}/.zshenv'
+    owner: '{{ shell_user }}'
+    group: '{{ shell_user }}'
+    mode: '0600'
+    backup: true
+- name: Install interactive shell and tmux settings (backup existing)
+  ansible.builtin.copy:
+    src: 'files/shell/{{ item.src }}'
+    dest: '/home/{{ shell_user }}/.config/{{ item.dest }}'
+    owner: '{{ shell_user }}'
+    group: '{{ shell_user }}'
+    mode: '0600'
+    backup: true
+  loop:
+    - {src: zshrc, dest: zsh/.zshrc}
+    - {src: zprofile, dest: zsh/.zprofile}
+    - {src: tmux.conf, dest: tmux/tmux.conf}
+- name: Install private Pyre launcher without importing old scripts or credentials
+  ansible.builtin.copy:
+    src: files/shell/pyre
+    dest: '/home/{{ shell_user }}/.local/bin/pyre'
+    owner: '{{ shell_user }}'
+    group: '{{ shell_user }}'
+    mode: '0700'
+    backup: true

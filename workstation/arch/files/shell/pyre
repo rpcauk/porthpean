@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Run a sibling lib/<name>.py through a private, locked Python environment."""
+import fcntl
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import stat
+import subprocess
+import sys
+
+
+def main():
+    os.umask(0o077)
+    invoked = Path(sys.argv[0]).absolute()
+    if invoked.name == 'pyre':
+        sys.exit('Invoke pyre through a symlink named after a script in the sibling lib directory.')
+    library = invoked.parent.resolve() / 'lib'
+    script = library / (invoked.name + '.py')
+    if not script.is_file():
+        script = library / invoked.name
+    if not script.is_file():
+        sys.exit(f'No Python script found for {invoked.name} in {library}')
+    cache = Path(os.environ.get('XDG_CACHE_HOME', str(Path.home() / '.cache'))) / 'pyre'
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if cache.is_symlink() or cache.stat().st_uid != os.getuid():
+        sys.exit('Pyre cache must be a private directory owned by this user.')
+    cache.chmod(0o700)
+    key = hashlib.sha256(os.fsencode(library)).hexdigest()[:24]
+    environment = cache / key
+    lockfd = os.open(cache / (key + '.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    if os.fstat(lockfd).st_uid != os.getuid() or not stat.S_ISREG(os.fstat(lockfd).st_mode):
+        sys.exit('Unsafe Pyre lock file.')
+    with os.fdopen(lockfd, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        python = environment / 'bin/python'
+        if environment.is_symlink():
+            sys.exit('Refusing a symlinked Python environment.')
+        if not python.is_file():
+            if environment.exists():
+                shutil.rmtree(environment)  # Retry only this private, incomplete environment.
+            subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
+        requirements = library / 'requirements.txt'
+        stamp = environment / '.requirements.sha256'
+        if requirements.is_file():
+            digest = hashlib.sha256(requirements.read_bytes()).hexdigest()
+            if not stamp.exists() or stamp.read_text() != digest:
+                subprocess.run([str(python), '-m', 'pip', 'install', '-r', str(requirements)], check=True)
+                stamp.write_text(digest)
+    os.execv(str(python), [str(python), str(script), *sys.argv[1:]])
+
+
+if __name__ == '__main__':
+    main()

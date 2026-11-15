@@ -1,0 +1,85 @@
+# Adapted from Ryan's current dotfiles. Each tmux pane is an independent shell.
+[[ -o interactive ]] || return
+if [[ -z $TMUX && ${PORTHPEAN_NO_TMUX:-0} != 1 ]] && (( $+commands[tmux] )); then
+  exec tmux new-session -A -s home
+fi
+
+umask 077
+mkdir -p "$XDG_CACHE_HOME/zsh" "$XDG_STATE_HOME/zsh"
+HISTSIZE=100000
+SAVEHIST=100000
+# Never import the shared history into the current shell's arrow-key history.
+unsetopt share_history inc_append_history_time
+setopt extended_history inc_append_history hist_ignore_space hist_ignore_dups hist_reduce_blanks hist_verify
+setopt globdots nolistbeep
+WORDCHARS='_-'
+bindkey -e
+# mktemp creates a private directory even when /tmp is shared by other accounts.
+typeset -g PORTHPEAN_HISTORY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/porthpean-zsh.${UID}.XXXXXXXX")
+[[ -d $PORTHPEAN_HISTORY_DIR ]] || return 1
+HISTFILE=$PORTHPEAN_HISTORY_DIR/history
+: > "$HISTFILE"
+chmod 600 "$HISTFILE"
+typeset -g PORTHPEAN_SHARED_HISTORY=$XDG_STATE_HOME/zsh/history.jsonl
+autoload -Uz add-zsh-hook colors vcs_info compinit
+colors
+_porthpean_record_history() {
+  # A leading space deliberately excludes a command from BOTH histories.
+  [[ $1 == ' '* ]] && return 1
+  print -rn -- "$1" | porthpean-shell-history append "$PORTHPEAN_SHARED_HISTORY" ||
+    print -u2 'Could not save shared shell history.'
+  return 0
+}
+_porthpean_clean_history() { command rm -rf -- "$PORTHPEAN_HISTORY_DIR"; }
+add-zsh-hook zshaddhistory _porthpean_record_history
+add-zsh-hook zshexit _porthpean_clean_history
+
+zstyle ':vcs_info:git:*' formats ' %b'
+zstyle ':vcs_info:*' enable git
+add-zsh-hook precmd vcs_info
+setopt prompt_subst
+PROMPT='%F{blue}%~%f%F{green}${vcs_info_msg_0_}%f %(?.%F{white}.%F{red})$%f '
+RPROMPT=''
+zstyle ':completion:*' matcher-list '' 'm:{a-zA-Z}={A-Za-z}'
+compinit -d "$XDG_CACHE_HOME/zsh/zcompdump"
+alias ls='ls --color=auto --group-directories-first'
+alias la='ls -A' ll='ls -lh' v=nvim md='mkdir -pv'
+alias cp='cp -iv' mv='mv -iv' rm='rm -vI'
+alias g=git gs='git status' ga='git add' gc='git commit' gca='git commit --amend'
+alias gpl='git pull' gp='git push' gco='git checkout' gcob='git checkout -b' glo='git log --oneline --graph'
+export FZF_DEFAULT_OPTS='--height=40% --layout=reverse --border=sharp --no-separator --no-scrollbar --color=bg:#1e1e1e,fg:#d4d4d4,bg+:#094771,fg+:#ffffff,hl:#569cd6,hl+:#569cd6,pointer:#007acc,prompt:#d4d4d4,border:#3c3c3c'
+zmodload zsh/parameter
+_porthpean_session_history() {
+  local event
+  for event in ${(Onk)history}; do print -rn -- "${history[$event]}"$'\0'; done
+}
+_porthpean_history_widget() {
+  local selected
+  if IFS= read -r -d '' selected < <(
+    if [[ $WIDGET == porthpean-global-history ]]; then
+      porthpean-shell-history list "$PORTHPEAN_SHARED_HISTORY"
+    else
+      _porthpean_session_history
+    fi | fzf --read0 --print0 --no-multi --no-sort --query "$LBUFFER" --prompt='history> '
+  ); then
+    BUFFER=$selected
+    CURSOR=${#BUFFER}
+  fi
+  zle reset-prompt
+}
+zle -N porthpean-global-history _porthpean_history_widget
+zle -N porthpean-session-history _porthpean_history_widget
+bindkey '^R' porthpean-global-history
+bindkey '^[r' porthpean-session-history
+bindkey '^[[A' up-line-or-history
+bindkey '^[[B' down-line-or-history
+bindkey '^[OA' up-line-or-history
+bindkey '^[OB' down-line-or-history
+
+# Keep caches user-owned; the pinned plugin itself is installed read-only.
+export FAST_WORK_DIR=$XDG_CACHE_HOME/fast-syntax-highlighting
+mkdir -p "$FAST_WORK_DIR"
+# Prevent the plugin's optional first-run secondary-theme network download.
+[[ -e $FAST_WORK_DIR/secondary_theme.zsh ]] || : > "$FAST_WORK_DIR/secondary_theme.zsh"
+[[ ! -r /usr/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh ]] ||
+  source /usr/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
