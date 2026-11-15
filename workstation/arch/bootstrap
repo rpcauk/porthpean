@@ -9,7 +9,6 @@ source /etc/os-release
 [[ $# == 0 ]] || { echo 'Usage: bash bootstrap (interactive)'; exit 1; }
 [[ -t 0 && -t 1 ]] || { echo 'Run interactively, not piped from curl.'; exit 1; }
 base=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-command -v whiptail >/dev/null || { echo 'Install the dialog dependency first: pacman -Syu --needed libnewt'; exit 1; }
 source "$base/ui.sh"
 source "$base/permissions.sh"
 umask 022
@@ -19,8 +18,8 @@ progress_dir=$(mktemp -d /root/porthpean-progress.XXXXXXXX)
 install_log="$progress_dir/install.log"
 : > "$install_log"
 chmod 0600 "$install_log"
-progress_helper="$base/progress.py"
-trap 'status=$?; if [[ $status != 0 ]]; then whiptail --title "Setup stopped - log" --scrolltext --textbox "$install_log" 22 78 >/dev/tty 2>&1 || true; fi' EXIT
+trap 'status=$?; if [[ $status != 0 ]]; then printf "\nSetup stopped (exit %s). Log: %s\n" "$status" "$install_log" >&2; fi' EXIT
+printf 'Setup log: %s\n' "$install_log"
 if ! daily_user=$(ui_input 'Daily account' 'Choose your daily username:' ryan); then ui_cancel; fi
 [[ ${#daily_user} -le 32 && $daily_user =~ ^[a-z][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
 [[ $daily_user != root && $daily_user != codex && $daily_user != amp ]] || { echo 'Reserved account name'; exit 1; }
@@ -34,14 +33,9 @@ if getent passwd "$daily_user" >/dev/null; then
   echo "Existing account $daily_user: home permissions and managed desktop files will be updated, with file backups."
 fi
 agents=()
-if ! selected=$(whiptail --backtitle 'Porthpean workstation' --title 'AI accounts' --output-fd 3 \
-  --separate-output --checklist 'Create dedicated accounts for:' 14 72 4 \
-  codex 'Codex CLI' ON amp 'Amp CLI' ON 3>&1 1>&2); then ui_cancel; fi
-while IFS= read -r agent; do
-  [[ -n $agent ]] || continue
-  [[ $agent == codex || $agent == amp ]] || exit 1
-  agents+=("$agent")
-done <<< "$selected"
+for agent in codex amp; do
+  if ui_yesno 'AI account' "Create/manage the dedicated $agent account?"; then agents+=("$agent"); fi
+done
 for agent in "${agents[@]}"; do
   if getent passwd "$agent" >/dev/null; then
     [[ $(id -u "$agent") -ge 1000 && $(getent passwd "$agent" | cut -d: -f6) == "/home/$agent" ]] || { echo "Unexpected existing account $agent"; exit 1; }
@@ -104,7 +98,7 @@ for stage in accounts aur shell desktop services validate; do
     --tags "$stage" -e "@$base/profiles/t480s.yml" -e "$vars" -e packages_preinstalled=true
 done
 # These steps have their own logs/progress; no package code is built as root.
-export progress_helper install_log
+export install_log
 run_progress 'Applying matching boot and unlock appearance' bash "$base/setup-appearance"
 PORTHPEAN_DAILY_USER="$daily_user" bash "$base/install-citrix"
 run_progress 'Installing Zoom Citrix plugin 6.4.11 (26350)' bash "$base/install-zoom"

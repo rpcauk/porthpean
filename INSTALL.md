@@ -17,7 +17,7 @@ bash "$INSTALLER"
 
 Review the installer and repository in advance; the entry script prints the checkout revision. Do not pipe downloads directly into a shell; `main` is mutable, not a signed release.
 
-Whiptail dialogs ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Hidden whiptail boxes collect and confirm all installer passwords; secrets go to system tools through stdin, not command arguments or files. The daily account gets password-protected sudo for pacman and power controls; agent accounts have no sudo. Yay is installed automatically and runs as the daily user. Vendor CLI installation and authentication remain separate interactive steps.
+Terminal prompts ask for a daily username (default `ryan`) and optional dedicated `codex`/`amp` accounts. Hidden terminal prompts collect and confirm all installer passwords; secrets go to system tools through stdin, not command arguments or files. The daily account gets password-protected sudo for pacman and power controls; agent accounts have no sudo. Yay is installed automatically and runs as the daily user. Vendor CLI installation and authentication remain separate interactive steps.
 
 ## Scope
 
@@ -32,7 +32,7 @@ Do not build a distro-independent installer or plugin system before there is ano
 
 Validation: shell/Ansible syntax, local rendering and mocked installer safety-guard tests only. A hardware install has not been run. Secure Boot enrollment, Restic destination/restore testing and Kanata configuration require machine-specific follow-up.
 
-During setup, whiptail shows the current stage and elapsed time. Package downloads/installation use real pacman percentages; installation identifies the package and transaction position. Commands run behind the dialog, with a private output log and an error-log viewer on failure. Password input is never included in that log.
+Installed-system setup prints stage headings and full command output directly in the terminal, with a private copy in the setup log. On failure it prints the exit status and log path. Password input is hidden and never included in that log. The separate fresh-disk installer retains its existing dialogs.
 
 The base installer installs a five-second rEFInd menu: Arch Linux LTS is always the default, with the regular kernel and detected Windows installation selectable. Windows EFI partitions are inspected read-only. Firmware registration runs outside the chroot and must match the new Linux ESP and lead BootOrder before completion. systemd-boot remains available as a recovery loader. Secure Boot remains a separate signing/enrollment step covering rEFInd and both UKIs. An existing failed boot should be repaired in place: **do not rerun the fresh installer**, which erases the selected disk.
 

@@ -26,7 +26,7 @@ if [[ $(pacman -Q icaclient 2>/dev/null || true) != "icaclient $version" ]]; the
   # The vendor normally supplies short-lived signed download URLs via the recipe.
   # If blocked, use an explicitly selected vendor archive and the SAME pinned checksum.
   if ! run_progress 'Downloading and checking Citrix source' bash "$base/aur-user" "$daily" "$build/source" bash -c 'cd "$1"; exec makepkg --verifysource --noconfirm' verify "$build/source"; then
-    whiptail --title 'Citrix source verification failed' --msgbox "Downloading or verifying Citrix failed. The preceding error is in the setup log: ${install_log:-terminal output}. This can be an HTTP error, missing link, network failure or checksum mismatch.\n\nFor the local fallback, open this exact version's page in your browser:\nhttps://www.citrix.com/downloads/workspace-app/legacy-workspace-app-for-linux/workspace-app-for-linux-2604-10.html\n\nChoose the Linux x86_64 TARBALL for 2604.10 (26.04.10.1), not the newer latest release. The existing SHA-256 check still applies." 21 78
+    printf '%b\n' "Downloading or verifying Citrix failed. The preceding error is in the setup log: ${install_log:-terminal output}. This can be an HTTP error, missing link, network failure or checksum mismatch.\n\nFor the local fallback, open this exact version's page in your browser:\nhttps://www.citrix.com/downloads/workspace-app/legacy-workspace-app-for-linux/workspace-app-for-linux-2604-10.html\n\nChoose the Linux x86_64 TARBALL for 2604.10 (26.04.10.1), not the newer latest release. The existing SHA-256 check still applies." >&2
     archive=$(ui_input 'Citrix vendor archive' 'Full path to linuxx64-gcc-8-26.04.10.1.tar.gz:' "/home/${PORTHPEAN_DAILY_USER:-ryan}/Downloads/linuxx64-gcc-8-26.04.10.1.tar.gz") || exit 1
     [[ -f $archive ]] || { echo 'Archive does not exist.' >&2; exit 1; }
     expected=8c0a22cad4a4cda802cb5d3bb09b89779d20f68ba5e454b86485354c557356b5
@@ -38,7 +38,7 @@ if [[ $(pacman -Q icaclient 2>/dev/null || true) != "icaclient $version" ]]; the
   aur_as_user rm -f "$build/source/.SRCINFO"
   aur_enable_install
   run_progress 'Installing Citrix Workspace with yay' bash "$base/aur-user" "$daily" "$build/source" \
-    /usr/bin/yay -Bi --noconfirm --sudobin /usr/bin/sudo --sudoflags=-n --nosudoloop "$build/source"
+    /usr/bin/yay -Bi --noconfirm --sudo /usr/bin/sudo --sudoflags=-n --nosudoloop "$build/source"
   [[ $(pacman -Q icaclient) == "icaclient $version" ]] || exit 1
 fi
 # Vendor services are not enabled, and security/USB/app-protection components aren't added.

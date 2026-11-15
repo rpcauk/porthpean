@@ -10,7 +10,7 @@ From a reviewed root-owned checkout, as root:
 bash bootstrap
 ```
 
-Whiptail dialogs select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. Hidden whiptail password boxes collect and confirm the daily password, which goes to chpasswd through stdin; existing passwords are retained unless changed explicitly. Mismatched or rejected passwords retry in place; Cancel exits. Passwords stay briefly in non-exported shell memory and are unset after use. No password/hash enters Ansible variables, command arguments or saved configuration. Tracing is disabled; shell memory wiping cannot be guaranteed. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
+Terminal prompts select the daily username (`ryan` by default) and optional `codex`/`amp` accounts. Hidden terminal prompts collect and confirm the daily password, which goes to chpasswd through stdin; existing passwords are retained unless changed explicitly. Mismatched or rejected passwords retry in place; End-of-input exits. Passwords stay briefly in non-exported shell memory and are unset after use. No password/hash enters Ansible variables, command arguments or saved configuration. Tracing is disabled; shell memory wiping cannot be guaranteed. The script performs an approved complete upgrade, then applies `site.yml` with `profiles/t480s.yml`.
 
 The reusable core handles accounts and convergence. The current profile specifies GB keyboard defaults. Packages and desktop choices remain deliberately opinionated. No disk identities, credentials, homelab hostnames or secrets belong in a public profile.
 
@@ -22,7 +22,7 @@ Remaining machine-specific work: Secure Boot trust/signing automation, verified 
 
 Validation performed on the Mac: shell parsing, Ansible syntax and local configuration rendering. No target-machine execution has been done.
 
-During setup, whiptail shows the current stage and elapsed time. Package downloads/installation use real pacman percentages; installation identifies the package and transaction position. Commands run behind the dialog, with a private output log and an error-log viewer on failure. Password input is never included in that log.
+Installed-system setup prints stage headings and full command output directly in the terminal, with a private copy in the setup log. On failure it prints the exit status and log path. Password input is hidden and never included in that log. The separate fresh-disk installer retains its existing dialogs.
 
 ## Declared state and validation
 
@@ -38,7 +38,7 @@ Desktop provisioning performs one approved complete system upgrade, then install
 
 The progress display contains short stage/package labels, elapsed time and real percentages rather than raw CLI output. Detailed output remains in the private error log. All progress subprocesses use `C.UTF-8`, including Ansible; the bootstrap checks UTF-8 before provisioning. This fixes the earlier runner's forced `LC_ALL=C`.
 
-Package-by-package installation now uses one persistent gauge across the package list, retains the real console TERM instead of forcing xterm, and limits progress redraws. Kernel upgrades that remove the running kernel's module tree cause a reboot checkpoint before continuing. Provisioning explicitly loads `nf_tables` before firewall validation and still refuses to enable the firewall if validation fails.
+Packages install individually with their normal terminal output. Kernel upgrades that remove the running kernel's module tree cause a reboot checkpoint before continuing. Provisioning explicitly loads `nf_tables` before firewall validation and still refuses to enable the firewall if validation fails.
 
 ## Dark+ appearance update
 

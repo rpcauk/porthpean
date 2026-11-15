@@ -12,7 +12,11 @@ SECRET = '  fake:$value\\backslash`tick"quoted  '
 
 
 def shell(path, body):
-    return subprocess.run(['bash', '-c', 'source "$1"\n' + body, 'test', str(path)], text=True, capture_output=True)
+    # Adapt synthetic dialog responses to the terminal reader for shared secret tests.
+    adapter = """
+ui_read() { whiptail --passwordbox 3>&1; }
+""" if path == UI else ''
+    return subprocess.run(['bash', '-c', 'source "$1"\n' + adapter + body, 'test', str(path)], text=True, capture_output=True)
 
 
 class PasswordDialogs(unittest.TestCase):
